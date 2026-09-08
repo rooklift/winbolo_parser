@@ -60,7 +60,7 @@ let use_obj_sprites = true;
 let use_lgm_sprites = true;
 let use_big_shots = false;
 let use_simple_terrain = false;
-let use_neutral_pill_colour = false;
+let use_neutral_pill_colour = true;
 let coordinate_debug_enabled = false;
 let pillbox_ids_enabled = false;
 /* The wire shows chat alone (and the "game started" divider) unless the
