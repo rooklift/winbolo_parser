@@ -584,6 +584,10 @@ function chat_line_parts(m) {
 		case "ally_leave": return sys(`${who} left the alliance`);
 		case "save_map": return sys(`${who} saved the map`);
 		case "ready": return sys(`${who} is ready`);
+		case "unready": return sys(`${who} is not ready`);
+		case "countdown_cancel": return sys("⏱ countdown cancelled");
+		case "spectator_join": return sys(`◌ ${pretty(m.text)} is watching${m.country ? ` (${m.country})` : ""}`);
+		case "spectator_quit": return sys(`◌ ${pretty(m.text)} stopped watching`);
 		case "countdown": return sys("⏱ countdown");
 		case "vote_called": return sys(`☐ ${who} called a vote to ${m.what}`);
 		case "vote_cast": return sys(`${m.vote ? "☑" : "☒"} ${who} voted ${m.vote ? "yes" : "no"}`);

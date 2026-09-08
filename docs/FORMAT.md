@@ -10,10 +10,12 @@ minizip, whose archive comment is `WinBolo Log File`. It holds:
 
 The layout of `log.dat` is that of `log.c` in the WinBolo source (John
 Morrison, 1998-2008, GPL v2, e.g. the [milki/winbolo](https://github.com/milki/winbolo)
-mirror), with the changes of **log version 2** worked out by inspection of
-a replay written by WinBolo 2.0.3, whose source is not public. Where this
-document says "public source" it means the last GPL release, which writes
-log version 0.
+mirror). The changes of **log version 2** were first worked out by
+inspection of replays written by WinBolo 2.0.3, whose source is not
+public, and then checked against John Morrison's own specification of the
+2.03 format, which named the new events and the attribution track's
+records; this document follows his names. Where it says "public source"
+it means the last GPL release, which writes log version 0.
 
 All multi-byte integers are big-endian unless stated. Strings are Pascal
 strings: a length byte, then that many single-byte (cp1252) characters.
@@ -26,14 +28,14 @@ version              1 byte; 2 in current replays (the public source writes 0)
 map name             Pascal string; the map loaded when the log began
 game type            1 byte: 1 open, 2 tournament, 3 strict
 hidden mines         1 byte, boolean
-AI                   1 byte (allow computer tanks: 0 no, 1 yes, 2 yes with advantage)
+AI                   1 byte (allow computer tanks: 0 no, 1 yes, 2 yes with advantage, 3 full)
 password             1 byte, boolean
 max players          1 byte
 WinBolo version      3 bytes, major.minor.revision
-server address       4 bytes IPv4, then 2 bytes port (both zero in the sample)
+server address       4 bytes IPv4, then 2 bytes port (2.03 writes zeros)
 game creation time   4 bytes, unix seconds by the server's clock; when the server
                      started, not this game: it survives a return to the lobby
-WinBolo.net key      32 ASCII hex characters
+WinBolo.net key      32 bytes: the game's WinBolo.net server key
 ```
 
 The first snapshot follows immediately.
@@ -57,9 +59,9 @@ records, each starting with a type byte:
 An events record is one tick. A no-events record is that many ticks. A
 snapshot is written between ticks and describes the state after the events
 before it: the server flushes the pending tick before writing one. The
-server writes a snapshot at the start and then periodically (every 600
-ticks in the public source, every 125 in the sample), skipping the write
-when nothing has happened since the last one.
+server writes a snapshot at the start and then every 125 ticks (2.5 s;
+600 in the public source), skipping the write when nothing has happened
+since the last one.
 
 ### Version 2 changes to the stream
 
@@ -70,9 +72,9 @@ when nothing has happened since the last one.
   payload length, then the payload. The public source had no length, so
   a reader had to know every type's size; now unknown types can be
   skipped, and the parser does so, keeping their payload raw.
-- **New event types** appear. Three are the lobby's ready and start
-  sequence, read from their timing across five replays; the rest are
-  unknown. See below.
+- **New event types** appear, for the lobby, votes and spectators. See
+  below. A reader should skip any type it does not know by its length:
+  2.04 adds a type 53, and more may follow.
 
 ## Events
 
@@ -82,7 +84,7 @@ with a in the high nibble and b in the low.
 
 | type | name              | payload                                                       |
 |------|-------------------|---------------------------------------------------------------|
-| 1    | PlayerJoined      | slot, 4 bytes, name. The 4 bytes were the player's IPv4 address; version 2 puts a two-letter country code in the first two and zeros in the rest |
+| 1    | PlayerJoined      | slot, 4 bytes, name. In version 0 the 4 bytes were the player's IPv4 address; from version 1 they are a two-letter country code, an account flags byte (bit 0 a WinBolo.net account, bit 1 a Steam account, bit 5 a bot) and a reserved zero |
 | 2    | PlayerQuit        | slot                                                          |
 | 3    | PlayerLocation    | slot, mx, my, nibble(px, py), nibble(direction 0-15, on boat). mx = my = 0 is a tank not in the world (dead, or in the lobby). Only logged when something changed |
 | 4    | LgmLocation       | nibble(slot, frame), mx, my, nibble(px, py). Logged every tick the man is out of the tank; frames 0-2 walk, 3 is the parachute |
@@ -168,51 +170,55 @@ same tick.
 
 ### Version 2 events
 
-| type | name        | payload | what                                                  |
-|------|-------------|---------|-------------------------------------------------------|
-| 39   | PlayerReady | slot    | a player's ready toggle in the lobby; repeats as they toggle |
-| 42   | Countdown   | none    | the countdown begins; always exactly 250 ticks (5 s) before the start |
-| 38   | GameStart   | none    | the game begins. The next snapshot (one tick later) is the first with a map and players in use; the first tank position follows a tick after that. Before this every snapshot is an empty map with no slots in use |
+The lobby, votes and spectators. A replay opens in the lobby: every
+snapshot there is an empty map with no slots in use, and only roster,
+chat and vote events are written. LobbyExit marks the game starting; the
+next snapshot, a tick later, is the first with the real map and players,
+and the first tank position follows a tick after that.
 
-These three are inferred from five replays, in all of which the sequence
-and the 250-tick gap are the same. The remaining new types are unknown:
+| type | name            | payload                    | what                                          |
+|------|-----------------|----------------------------|-----------------------------------------------|
+| 37   | LobbyEnter      | none                       | the lobby opens; tick 0 of every log, and again after a vote returns to it |
+| 38   | LobbyExit       | none                       | the game begins                               |
+| 39   | PlayerReady     | slot                       | a player toggles ready in the lobby           |
+| 40   | PlayerUnready   | slot                       | and back                                      |
+| 41   | TeamSet         | slot, team                 | a player's lobby team                         |
+| 42   | CountdownStart  | none                       | the countdown begins; always 250 ticks (5 s) before LobbyExit |
+| 43   | CountdownCancel | none                       |                                               |
+| 44   | MapSkipVote     | slot                       | a vote to skip the map                        |
+| 45   | MapSkipApplied  | map name                   | the map was skipped for this one              |
+| 46   | BalanceApplied  | none                       | the teams were auto-balanced                  |
+| 47   | GameVoteStart   | kind, caller, team         | a vote is called; kind 1 is a return to the lobby, 2 a surrender; team 0 puts it to everyone |
+| 48   | GameVoteCast    | kind, slot, vote (1 yes)   | a player votes; the caller's own vote comes with the call |
+| 49   | GameVoteEnd     | kind, result (1 passed)    | the vote resolves; a passed vote returns the server to the lobby |
+| 50   | SpectatorJoined | spectator, 4 bytes, name   | shaped like PlayerJoined; spectators have their own numbering |
+| 51   | SpectatorLeft   | spectator, name            |                                               |
+| 52   | SpectatorChat   | spectator, text            | reserved; 2.03 never writes it                |
 
-| type | payload   | when                                                   |
-|------|-----------|--------------------------------------------------------|
-| 37   | none      | tick 0 of every log                                    |
-| 41   | 2 bytes   | in the lobby, in one replay (3.1 then 2.2): team or colour changes? |
-| 50   | slot, 4 bytes, name | shaped like PlayerJoined, during a game, for a player who never appeared; a join that failed? (A player joining mid-game is an ordinary PlayerJoined.) |
-| 51   | slot, 4 bytes, name | as 50, in the lobby                          |
-
-The end of a game is a vote, in three more version 2 events:
-
-| type | name        | payload                    | what                                          |
-|------|-------------|----------------------------|-----------------------------------------------|
-| 47   | VoteCalled  | kind, caller, one more byte | a vote is called; kind 1 is a return to the lobby, 2 a surrender |
-| 48   | VoteCast    | kind, slot, vote (1 yes)   | a player votes; the caller's own vote comes with the call |
-| 49   | VoteResult  | kind, result (1 passed)    | the vote resolves, and the server returns to the lobby |
-
-Seen in a game ended by a vote to return to the lobby (47 = 1,0,0; 48 =
-1,0,1; then 48 = 1,1,1 and 49 = 1,1 when the other player voted) and in
-games ended by surrender (47 = 2,0,1 and 48 = 2,0,1 together, 49 = 2,1
-five seconds later). The third byte of VoteCalled is not understood.
+The vote kinds are read from the replays (a game ended by a vote to
+return to the lobby: 47 = 1,0,0; 48 = 1,0,1; then 48 = 1,1,1 and 49 = 1,1
+when the other player voted; games ended by surrender: 47 = 2,3,1 and 48
+= 2,3,1 together, 49 = 2,1 five seconds later). SaveMap (31) is never
+written by 2.03 according to the specification, although the viewer
+handles it if it appears.
 
 ## Snapshots
 
 ```
-start delay          4 bytes
-time left            4 bytes; 0xffffffff for no limit
+start delay          4 bytes, ms until the game starts
+game length          4 bytes, ms; no limit is 0 by the specification, 0xffffffff in every replay seen
 pills                length byte, then: count, and per pill
                        x, y, armour, owner, speed, in tank, reload, just seen, cool down
 bases                length byte, then: count, and per base
-                       x, y, owner, armour, shells, mines, refuel time, base time (2 bytes), just stopped
+                       x, y, owner, armour, shells, mines, refuel time, base time (2 bytes,
+                       little-endian: the one such field in the log), just stopped
 starts               length byte, then: count, and per start x, y, direction
 map                  run-length rows, as in a BMAPBOLO map file, ending with the 04 FF FF FF run
 players              16 records, each a length byte then:
                        slot, in use; and when in use:
                        mx, my, nibble(px, py), frame, on boat,
                        man mx, my, nibble(px, py), frame,
-                       name (Pascal), location (Pascal; the country code in version 2),
+                       name (Pascal), location (Pascal, free text; the country code in version 2),
                        ally count, ally slots
 ```
 
@@ -229,19 +235,39 @@ Terrain codes (map file and MapChange alike): 0 building, 1 river,
 
 ## attribution.trk
 
-Not in the public source; framing found from one file, fields not decoded:
+The server's own record of who did what to whom, written only by
+server-side recordings, and the raw material for post-game statistics.
+It is not needed to play a replay back. Its layout is from John
+Morrison's specification: **everything in it is little-endian**, an image
+of the server's packed structures.
 
 ```
-"WBAT"               4 bytes
-                     4 bytes (02 00 10 00 in the sample: a version and the 16 slots?)
-player table         16 slots of 66 bytes: two bytes, then a 64-byte name
-record count         4 bytes, little-endian, at offset 0x428
-records              type byte, 4-byte little-endian time, then a fixed payload:
-                       type 1: 9 bytes; 2 and 3: 7 bytes; 4, 5 and 6: 4 bytes
+"WBAT"               4 bytes, no terminator
+version              1 byte; 2
+truncated            1 byte; 1 if the 64 MB per-round cap dropped records
+slot count           2 bytes; 16
+slot identities      16 × 66 bytes: bot (1 byte), team (1 byte), name (64 bytes, NUL-padded)
+record count         4 bytes, at offset 1064
+records              type byte, 4-byte tick, then a fixed payload by type
 ```
 
-Record times run at twice the log's tick rate (10 ms game ticks, the
-public source's `GAME_TICK_LENGTH`) from about the game's start. Type 5
-records end in a map square that matches a `MapChange` in the log, so the
-file looks like a per-player account of terrain changes, kills and
-captures, presumably for WinBolo.net statistics.
+Record ticks are the server's internal 10 ms steps, twice the log's rate,
+counted from the start of the round: they line up with the log's ticks
+only from the snapshot after LobbyExit (the file's tick 0 when there was
+no lobby), and the offset is not stored. Records carry no length, so a
+reader that meets a type it does not know must stop.
+
+| type | name     | payload                                                                  |
+|------|----------|--------------------------------------------------------------------------|
+| 1    | damage   | source (0 unknown, 1 shell, 2 mine), target (0 tank, 1 pill, 2 base), target index, attacker, amount (2 bytes), destroyed, x, y |
+| 2    | kill     | killer, killed, death cause, carried pills, trees wasted, x, y            |
+| 3    | capture  | target (0 pill, 1 base), target index, new owner, previous owner, class (0 was neutral, 1 from an enemy, 2 from an ally), x, y |
+| 4    | lgm lost | victim, killer, x, y                                                     |
+| 5    | action   | player, action (0 farm, 1 build, 2 lay mine, 3 fire), x, y               |
+| 6    | pickup   | picker, pill index, x, y: a dead pillbox scooped up                      |
+
+A player field of 255 is no one: splash and chain damage has no attacker,
+an environmental death no killer. `amount` is the armour a hit removed;
+`destroyed` is set when it took a pillbox to zero. The death cause,
+carried pills and trees wasted are server-internal values that appear
+nowhere else. Squares are 0 when unknown.

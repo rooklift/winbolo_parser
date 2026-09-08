@@ -118,15 +118,17 @@ logs every moving object every tick. Shells are anonymous in the log,
 but the engine follows each one from its muzzle to its burst, so it
 knows who fired it and what it hit; a shell that falls at the end of its
 range lands with the Mac viewer's quiet splash rather than a fireball
-(FORMAT.md has the method). What the public source does not explain is
-left alone: the unknown event types are parsed and skipped, and
-`attribution.trk` is read but not used.
+(FORMAT.md has the method). Every event type of the 2.03 format is
+decoded, and `attribution.trk` is read into named records, though the
+viewer draws nothing from it yet; an event type from a later WinBolo is
+skipped by its length.
 
 ## Provenance and credits
 
 - **[WinBolo](https://github.com/milki/winbolo)** (**John Morrison**,
   1998-2008, GPL v2): the log format, the map codec, the terrain tile
-  rules and the tile art.
+  rules and the tile art; and his specification of the 2.03 replay
+  format, which named the version 2 events and the attribution records.
 - **Stuart Cheshire**: Bolo itself, whose sprites the art descends from.
 - **[Ancient Bolo Parser](https://github.com/rooklift/ancient_bolo_parser)**:
   the viewer's design, layout and controls, and its `format.js` and

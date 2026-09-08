@@ -235,7 +235,7 @@ function initial_state() {
 	return {
 		tick: -1, grid, grid_version: 0, pills: [], bases: [], starts: [],
 		players: Array.from({ length: MAX_TANKS }, (_, i) => fresh_player(i)),
-		shells: [], start_delay: 0, time_left: 0xffffffff, mine_blasts: [],
+		shells: [], start_delay: 0, game_length: 0, mine_blasts: [],
 	};
 }
 
@@ -251,7 +251,7 @@ function state_from_snapshot(s, previous) {
 	st.bases = s.bases.map(b => ({ x: b.x, y: b.y, owner: b.owner, armour: b.armour, shells: b.shells, mines: b.mines }));
 	st.starts = s.starts.map(x => ({ x: x.x, y: x.y, dir: x.dir }));
 	st.start_delay = s.start_delay;
-	st.time_left = s.time_left;
+	st.game_length = s.game_length;
 	for (let i = 0; i < MAX_TANKS; i++) {
 		let p = s.players[i];
 		let pl = st.players[i];
@@ -279,7 +279,7 @@ function clone_state(s) {
 		tick: s.tick, grid: s.grid.slice(), grid_version: s.grid_version,
 		pills: s.pills.map(p => ({ ...p })), bases: s.bases.map(b => ({ ...b })), starts: s.starts.map(x => ({ ...x })),
 		players: s.players.map(p => ({ ...p, allies: p.allies.slice(), tank: { ...p.tank }, lgm: { ...p.lgm } })),
-		shells: s.shells.slice(), start_delay: s.start_delay, time_left: s.time_left, mine_blasts: s.mine_blasts.slice(),
+		shells: s.shells.slice(), start_delay: s.start_delay, game_length: s.game_length, mine_blasts: s.mine_blasts.slice(),
 	};
 }
 
@@ -472,20 +472,36 @@ function apply_event(s, e, effects, chat) {
 		case EV.PlayerReady:
 			push_chat("ready");
 			break;
-		case EV.Countdown:
+		case EV.PlayerUnready:
+			push_chat("unready");
+			break;
+		case EV.CountdownStart:
 			if (chat) chat.push({ tick: e.tick, kind: "countdown" });
 			break;
-		case EV.GameStart:
+		case EV.CountdownCancel:
+			if (chat) chat.push({ tick: e.tick, kind: "countdown_cancel" });
+			break;
+		case EV.LobbyExit:
 			if (chat) chat.push({ tick: e.tick, kind: "game_start" });
 			break;
-		case EV.VoteCalled:
+		case EV.GameVoteStart:
 			push_chat("vote_called", { what: WinBoloLog.VOTE_KINDS[e.kind] || `vote kind ${e.kind}` });
 			break;
-		case EV.VoteCast:
+		case EV.GameVoteCast:
 			push_chat("vote_cast", { vote: e.vote });
 			break;
-		case EV.VoteResult:
+		case EV.GameVoteEnd:
 			if (chat) chat.push({ tick: e.tick, kind: "vote_result", what: WinBoloLog.VOTE_KINDS[e.kind] || `vote kind ${e.kind}`, passed: e.passed });
+			break;
+		case EV.SpectatorJoined:
+			if (chat) chat.push({ tick: e.tick, kind: "spectator_join", text: e.player_name, country: e.country });
+			break;
+		case EV.SpectatorLeft:
+			if (chat) chat.push({ tick: e.tick, kind: "spectator_quit", text: e.player_name });
+			break;
+		case EV.SpectatorChat:
+			/* spectators have no slot; the server has never written one of these */
+			if (chat) chat.push({ tick: e.tick, kind: "say", name: `spectator ${e.spectator}`, spectator: true, text: e.text });
 			break;
 		case EV.LostMan:
 			if (!pl) break;
@@ -622,7 +638,7 @@ function land_bounds(grid) {
 function game_start_tick(log) {
 	let marker = -1;
 	for (let e of log.events) {
-		if (e.type === EV.GameStart) { marker = e.tick; break; }
+		if (e.type === EV.LobbyExit) { marker = e.tick; break; }
 	}
 	for (let s of log.snapshots) {
 		if (s.tick >= marker && s.players.some(p => p.in_use)) return s.tick;

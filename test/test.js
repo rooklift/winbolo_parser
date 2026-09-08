@@ -74,6 +74,21 @@ function boat_shell(tick0) {
 	return out;
 }
 
+/* An attribution.trk with two named slots and one record of three kinds. */
+function synthetic_attribution() {
+	let le32 = n => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255];
+	let slot = (bot, team, name) => [bot, team, ...Buffer.from(name.padEnd(64, "\0"))];
+	let head = [...Buffer.from("WBAT"), 2, 0, 16, 0];
+	for (let i = 0; i < 16; i++) head.push(...(i === 0 ? slot(0, 1, "Alice") : i === 1 ? slot(1, 2, "Bob") : slot(0, 0, "")));
+	head.push(...le32(3));
+	let records = [
+		1, ...le32(300), 1, 1, 0, 1, 2, 1, 1, 101, 102,   /* damage: a shell from Bob takes pill 0 to zero at 101,102 */
+		2, ...le32(65536), 255, 0, 2, 0, 0, 100, 100,    /* kill: Alice, by no one */
+		5, ...le32(400), 0, 2, 100, 100,                 /* action: Alice lays a mine */
+	];
+	return Uint8Array.from([...head, ...records]);
+}
+
 function synthetic_log() {
 	let header = [...Buffer.from("WBOLOMOV"), 2, ...pstr("Test Map"), 3, 0, 0, 0, 16, 2, 0, 3,
 		0, 0, 0, 0, 0, 0, ...be32(1700000000), ...Buffer.from("0123456789abcdef0123456789abcdef")];
@@ -161,15 +176,20 @@ function make_zip(members) {
 
 async function test_synthetic() {
 	let log_bytes = synthetic_log();
-	let archive = make_zip([["log.dat", log_bytes]]);
+	let archive = make_zip([["log.dat", log_bytes], ["attribution.trk", synthetic_attribution()]]);
 	check("zip is recognised", zip.is_zip(archive));
 	let entries = zip.entries(archive);
-	check("zip has one member", entries.length === 1 && entries[0].name === "log.dat");
+	check("zip has two members", entries.length === 2 && entries[0].name === "log.dat" && entries[1].name === "attribution.trk");
 	check("zip comment", entries.comment === "WinBolo Log File");
 	let inflated = await inflate.inflate_raw(entries[0].data);
 	check("member inflates to the log", Buffer.compare(Buffer.from(inflated), Buffer.from(log_bytes)) === 0);
 
-	let { log } = await WinBoloLog.open_archive(archive, zip, inflate);
+	let { log, attribution } = await WinBoloLog.open_archive(archive, zip, inflate);
+	check("attribution header", attribution.version === 2 && !attribution.truncated && attribution.slots === 16 && attribution.count === 3 && attribution.complete, JSON.stringify(attribution));
+	check("attribution slots", attribution.players[0].name === "Alice" && attribution.players[0].team === 1 && !attribution.players[0].bot && attribution.players[1].bot);
+	check("attribution damage", JSON.stringify(attribution.records[0]) === JSON.stringify({ tick: 300, type: 1, name: "damage", source: "shell", target: "pill", target_index: 0, attacker: 1, amount: 258, destroyed: true, x: 101, y: 102 }), JSON.stringify(attribution.records[0]));
+	check("attribution kill", attribution.records[1].name === "kill" && attribution.records[1].killer === 255 && attribution.records[1].killed === 0 && attribution.records[1].tick === 65536);
+	check("attribution action", attribution.records[2].name === "action" && attribution.records[2].action === "lay_mine" && attribution.records[2].x === 100);
 	let h = log.header;
 	check("header map name", h.map_name === "Test Map");
 	check("header bolo version", h.bolo_version === "2.0.3");
@@ -190,7 +210,7 @@ async function test_synthetic() {
 
 	let ev = log.events;
 	let names = ev.map(e => e.name);
-	check("event names", names.slice(0, 18).join(",") === "PlayerJoined,PlayerReady,Countdown,GameStart,PlayerJoined,PlayerLocation,MessageAll,LgmLocation,Shell,Shell,MapChange,PillSetHealth,PillSetOwner,BaseSetOwner,KillPlayer,event_99,LostMan,PlayerQuit", names.join(","));
+	check("event names", names.slice(0, 18).join(",") === "PlayerJoined,PlayerReady,CountdownStart,LobbyExit,PlayerJoined,PlayerLocation,MessageAll,LgmLocation,Shell,Shell,MapChange,PillSetHealth,PillSetOwner,BaseSetOwner,KillPlayer,event_99,LostMan,PlayerQuit", names.join(","));
 	ev = ev.filter(e => e.tick < 500); /* the shell-tracking tail is checked below */
 	check("event ticks", ev.map(e => e.tick).join(",") === "0,1,1,11,11,11,11,268,268,268,268,268,268,268,268,268,269,269", ev.map(e => e.tick).join(","));
 	check("ready decodes", ev[1].player === 0);

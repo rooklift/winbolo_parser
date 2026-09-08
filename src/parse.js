@@ -27,15 +27,17 @@ const EVENT = {
 	AllyRequest: 22, AllyAccept: 23, AllyLeave: 24,
 	BaseSetOwner: 25, BaseSetStock: 26, PillSetOwner: 27, PillSetHealth: 28, PillSetPlace: 29, PillSetInTank: 30,
 	SaveMap: 31, LostMan: 32, KillPlayer: 33, PlayerRejoin: 34, PlayerLeaving: 35, PlayerDied: 36,
-	/* version 2 additions, read from their timing in five replays (see
-	 * FORMAT.md): a player's ready toggle in the lobby, the five-second
-	 * countdown starting, and the game starting */
-	PlayerReady: 39, Countdown: 42, GameStart: 38,
-	/* how a game ends: a vote is called, players vote, the result comes;
-	 * kind 1 is a return to the lobby, kind 2 a surrender */
-	VoteCalled: 47, VoteCast: 48, VoteResult: 49,
+	/* version 2 additions, named as in John Morrison's 2.03 format
+	 * specification (see FORMAT.md): the lobby, votes and spectators */
+	LobbyEnter: 37, LobbyExit: 38, PlayerReady: 39, PlayerUnready: 40, TeamSet: 41,
+	CountdownStart: 42, CountdownCancel: 43, MapSkipVote: 44, MapSkipApplied: 45, BalanceApplied: 46,
+	GameVoteStart: 47, GameVoteCast: 48, GameVoteEnd: 49,
+	SpectatorJoined: 50, SpectatorLeft: 51, SpectatorChat: 52,
 };
+/* Vote kinds, from the replays: 1 is a return to the lobby, 2 a surrender */
 const VOTE_KINDS = { 1: "return to the lobby", 2: "surrender" };
+/* PlayerJoined account flags */
+const ACCOUNT_WBN = 1, ACCOUNT_STEAM = 2, ACCOUNT_BOT = 32;
 const EVENT_NAMES = {};
 for (let name in EVENT) EVENT_NAMES[EVENT[name]] = name;
 
@@ -156,7 +158,7 @@ function parse_snapshot(bytes, p, tick) {
 	let s = { tick, offset: p };
 	if (p + 8 > bytes.length) throw new Error("snapshot is truncated");
 	s.start_delay = be32(bytes, p);
-	s.time_left = be32(bytes, p + 4); /* 0xffffffff: no time limit */
+	s.game_length = be32(bytes, p + 4); /* ms; 0 or 0xffffffff: no time limit */
 	p += 8;
 
 	let n = bytes[p++];
@@ -174,7 +176,7 @@ function parse_snapshot(bytes, p, tick) {
 	s.bases = [];
 	for (let i = 0, q = 1; i < table[0] && q + 10 <= table.length; i++, q += 10) {
 		s.bases.push({ x: table[q], y: table[q + 1], owner: table[q + 2], armour: table[q + 3], shells: table[q + 4],
-			mines: table[q + 5], refuel_time: table[q + 6], base_time: be16(table, q + 7), just_stopped: table[q + 9] });
+			mines: table[q + 5], refuel_time: table[q + 6], base_time: table[q + 7] | (table[q + 8] << 8) /* little-endian, alone in the log */, just_stopped: table[q + 9] });
 	}
 
 	n = bytes[p++];
@@ -223,13 +225,19 @@ function snapshot_grid(s) {
 
 /* Decoders for the payload of each known event type: the argument bytes
  * logAddEvent wrote, in its order, read back into named fields. */
+let log_version = SUPPORTED_VERSION; /* of the log being parsed: PlayerJoined's shape depends on it */
 const DECODERS = {
 	[EVENT.PlayerJoined]: (b, e) => {
 		e.player = b[0];
-		e.ip = [b[1], b[2], b[3], b[4]];
-		/* version 2 puts a two-letter country code where the address was */
-		if (b[1] >= 0x41 && b[1] <= 0x5a && b[2] >= 0x41 && b[2] <= 0x5a && b[3] === 0 && b[4] === 0) {
-			e.country = String.fromCharCode(b[1], b[2]);
+		if (log_version === 0) {
+			e.ip = [b[1], b[2], b[3], b[4]]; /* version 0 logged the player's address */
+		} else {
+			/* versions 1 and 2: a two-letter country code, account flags, a reserved byte */
+			if (b[1] || b[2]) e.country = String.fromCharCode(b[1], b[2]);
+			e.account_flags = b[3];
+			e.wbn_account = (b[3] & ACCOUNT_WBN) !== 0;
+			e.steam_account = (b[3] & ACCOUNT_STEAM) !== 0;
+			e.bot = (b[3] & ACCOUNT_BOT) !== 0;
 		}
 		e.player_name = pstring(b, 5)[0];
 	},
@@ -271,12 +279,27 @@ const DECODERS = {
 	[EVENT.PlayerRejoin]: (b, e) => { e.player = b[0]; },
 	[EVENT.PlayerLeaving]: (b, e) => { e.player = b[0]; },
 	[EVENT.PlayerDied]: (b, e) => { e.player = b[0]; },
+	[EVENT.LobbyEnter]: () => {},
+	[EVENT.LobbyExit]: () => {},
 	[EVENT.PlayerReady]: (b, e) => { e.player = b[0]; },
-	[EVENT.Countdown]: () => {},
-	[EVENT.GameStart]: () => {},
-	[EVENT.VoteCalled]: (b, e) => { e.kind = b[0]; e.player = b[1]; e.raw = Array.from(b); },
-	[EVENT.VoteCast]: (b, e) => { e.kind = b[0]; e.player = b[1]; e.vote = b[2] !== 0; },
-	[EVENT.VoteResult]: (b, e) => { e.kind = b[0]; e.passed = b[1] !== 0; },
+	[EVENT.PlayerUnready]: (b, e) => { e.player = b[0]; },
+	[EVENT.TeamSet]: (b, e) => { e.player = b[0]; e.team = b[1]; },
+	[EVENT.CountdownStart]: () => {},
+	[EVENT.CountdownCancel]: () => {},
+	[EVENT.MapSkipVote]: (b, e) => { e.player = b[0]; },
+	[EVENT.MapSkipApplied]: (b, e) => { e.map_name = pstring(b, 0)[0]; },
+	[EVENT.BalanceApplied]: () => {},
+	[EVENT.GameVoteStart]: (b, e) => { e.kind = b[0]; e.player = b[1]; e.team = b[2]; /* 0: everyone votes */ },
+	[EVENT.GameVoteCast]: (b, e) => { e.kind = b[0]; e.player = b[1]; e.vote = b[2] !== 0; },
+	[EVENT.GameVoteEnd]: (b, e) => { e.kind = b[0]; e.passed = b[1] !== 0; },
+	[EVENT.SpectatorJoined]: (b, e) => {
+		e.spectator = b[0];
+		if (b[1] || b[2]) e.country = String.fromCharCode(b[1], b[2]);
+		e.account_flags = b[3];
+		e.player_name = pstring(b, 5)[0];
+	},
+	[EVENT.SpectatorLeft]: (b, e) => { e.spectator = b[0]; e.player_name = pstring(b, 1)[0]; },
+	[EVENT.SpectatorChat]: (b, e) => { e.spectator = b[0]; e.text = pstring(b, 1)[0]; },
 };
 for (let t = EVENT.SoundBuild; t <= EVENT.SoundManDie; t++) {
 	DECODERS[t] = (b, e) => { e.x = b[0]; e.y = b[1]; };
@@ -291,8 +314,11 @@ const MIN_PAYLOAD = {
 	[EVENT.AllyLeave]: 1, [EVENT.BaseSetOwner]: 3, [EVENT.BaseSetStock]: 4, [EVENT.PillSetOwner]: 3,
 	[EVENT.PillSetHealth]: 1, [EVENT.PillSetPlace]: 3, [EVENT.PillSetInTank]: 1, [EVENT.SaveMap]: 1,
 	[EVENT.LostMan]: 1, [EVENT.KillPlayer]: 2, [EVENT.PlayerRejoin]: 1, [EVENT.PlayerLeaving]: 1,
-	[EVENT.PlayerDied]: 1, [EVENT.PlayerReady]: 1, [EVENT.Countdown]: 0, [EVENT.GameStart]: 0,
-	[EVENT.VoteCalled]: 2, [EVENT.VoteCast]: 3, [EVENT.VoteResult]: 2,
+	[EVENT.PlayerDied]: 1, [EVENT.LobbyEnter]: 0, [EVENT.LobbyExit]: 0, [EVENT.PlayerReady]: 1,
+	[EVENT.PlayerUnready]: 1, [EVENT.TeamSet]: 2, [EVENT.CountdownStart]: 0, [EVENT.CountdownCancel]: 0,
+	[EVENT.MapSkipVote]: 1, [EVENT.MapSkipApplied]: 1, [EVENT.BalanceApplied]: 0,
+	[EVENT.GameVoteStart]: 3, [EVENT.GameVoteCast]: 3, [EVENT.GameVoteEnd]: 2,
+	[EVENT.SpectatorJoined]: 6, [EVENT.SpectatorLeft]: 2, [EVENT.SpectatorChat]: 2,
 };
 for (let t = EVENT.SoundBuild; t <= EVENT.SoundManDie; t++) MIN_PAYLOAD[t] = 2;
 
@@ -321,6 +347,7 @@ function* parse_steps(bytes) {
 	if (header.version !== SUPPORTED_VERSION) {
 		throw new Error(`WinBolo log version ${header.version} is not supported (only version ${SUPPORTED_VERSION})`);
 	}
+	log_version = header.version;
 	let events = [];
 	let snapshots = [];
 	let warnings = [];
@@ -407,37 +434,75 @@ function parse_log(bytes) {
 	return step.value;
 }
 
-/* ---------- attribution.trk ----------
- * A second member newer servers add to the archive. It is not in the
- * public source; the framing below was worked out from one file and the
- * fields are left raw. Header: "WBAT", 4 bytes, a 16-slot player table
- * (66 bytes each: two flag bytes then a 64-byte name), a little-endian
- * uint32 record count at 0x428, then records of a type byte, a
- * little-endian uint32 timestamp (10 ms game ticks: twice the log's rate)
- * and a fixed payload. */
+/* ---------- attribution.trk ---------- */
+
+/* The server's own record of who did what to whom, as John Morrison's
+ * 2.03 format specification lays it out: a 1068-byte header (magic
+ * "WBAT", a version, a truncated flag, the slot count, 16 slot identities
+ * of 66 bytes, the record count), then records of a type byte, a uint32
+ * tick and a fixed payload. Everything is little-endian, and the ticks
+ * are the server's 10 ms steps counted from the start of the round: twice
+ * the log's rate, and not from the log's tick 0 when there was a lobby. */
+const ATTRIBUTION_HEADER = 1068;
 const ATTRIBUTION_PAYLOAD = { 1: 9, 2: 7, 3: 7, 4: 4, 5: 4, 6: 4 };
+const ATTRIBUTION_TYPES = { 1: "damage", 2: "kill", 3: "capture", 4: "lgm_lost", 5: "action", 6: "pickup" };
+const DAMAGE_SOURCES = { 0: "unknown", 1: "shell", 2: "mine" };
+const DAMAGE_TARGETS = { 0: "tank", 1: "pill", 2: "base" };
+const CAPTURE_TARGETS = { 0: "pill", 1: "base" };
+const CAPTURE_CLASSES = { 0: "neutral", 1: "enemy", 2: "ally" };
+const ACTIONS = { 0: "farm", 1: "build", 2: "lay_mine", 3: "fire" };
+
+function le16(b, p) { return b[p] | (b[p + 1] << 8); }
+function le32(b, p) { return (b[p] | (b[p + 1] << 8) | (b[p + 2] << 16) | (b[p + 3] * 0x1000000)) >>> 0; }
+
+const ATTRIBUTION_DECODERS = {
+	1: (b, r) => {
+		r.source = DAMAGE_SOURCES[b[0]] || `source ${b[0]}`; r.target = DAMAGE_TARGETS[b[1]] || `target ${b[1]}`;
+		r.target_index = b[2]; r.attacker = b[3]; r.amount = le16(b, 4); r.destroyed = b[6] !== 0; r.x = b[7]; r.y = b[8];
+	},
+	2: (b, r) => {
+		r.killer = b[0]; r.killed = b[1]; r.death_cause = b[2]; r.carried_pills = b[3]; r.trees_wasted = b[4]; r.x = b[5]; r.y = b[6];
+	},
+	3: (b, r) => {
+		r.target = CAPTURE_TARGETS[b[0]] || `target ${b[0]}`; r.target_index = b[1]; r.new_owner = b[2]; r.prev_owner = b[3];
+		r.capture_class = CAPTURE_CLASSES[b[4]] || `class ${b[4]}`; r.x = b[5]; r.y = b[6];
+	},
+	4: (b, r) => { r.victim = b[0]; r.killer = b[1]; r.x = b[2]; r.y = b[3]; },
+	5: (b, r) => { r.player = b[0]; r.action = ACTIONS[b[1]] || `action ${b[1]}`; r.x = b[2]; r.y = b[3]; },
+	6: (b, r) => { r.picker = b[0]; r.pill = b[1]; r.x = b[2]; r.y = b[3]; },
+};
 
 function parse_attribution(bytes) {
-	if (bytes.length < 0x42c || text(bytes, 0, 4) !== "WBAT") throw new Error("not a WinBolo attribution file (no WBAT header)");
-	let count = bytes[0x428] | (bytes[0x429] << 8) | (bytes[0x42a] << 16) | (bytes[0x42b] * 0x1000000);
+	if (bytes.length < ATTRIBUTION_HEADER || text(bytes, 0, 4) !== "WBAT") throw new Error("not a WinBolo attribution file (no WBAT header)");
+	let version = bytes[4];
+	let truncated = bytes[5] !== 0;
+	let slots = le16(bytes, 6);
+	let count = le32(bytes, ATTRIBUTION_HEADER - 4);
 	let players = [];
 	for (let i = 0; i < MAX_TANKS; i++) {
 		let q = 8 + i * 66;
 		let name = "";
 		for (let j = q + 2; j < q + 66 && bytes[j]; j++) name += String.fromCharCode(bytes[j]);
-		players.push({ slot: i, flags: [bytes[q], bytes[q + 1]], name });
+		players.push({ slot: i, bot: bytes[q] !== 0, team: bytes[q + 1], name });
 	}
 	let records = [];
-	let p = 0x42c;
+	let p = ATTRIBUTION_HEADER;
+	let warning = null;
 	while (p + 5 <= bytes.length) {
 		let type = bytes[p];
 		let n = ATTRIBUTION_PAYLOAD[type];
-		if (n === undefined) throw new Error(`attribution record type ${type} at offset ${p} is unknown`);
-		let time = bytes[p + 1] | (bytes[p + 2] << 8) | (bytes[p + 3] << 16) | (bytes[p + 4] * 0x1000000);
-		records.push({ time, type, raw: Array.from(bytes.subarray(p + 5, p + 5 + n)) });
+		if (n === undefined) {
+			/* records carry no length, so an unknown type ends the track */
+			warning = `attribution record type ${type} at offset ${p} is unknown; ${records.length} of ${count} records read`;
+			break;
+		}
+		if (p + 5 + n > bytes.length) break;
+		let r = { tick: le32(bytes, p + 1), type, name: ATTRIBUTION_TYPES[type] };
+		ATTRIBUTION_DECODERS[type](bytes.subarray(p + 5, p + 5 + n), r);
+		records.push(r);
 		p += 5 + n;
 	}
-	return { count, players, records, complete: records.length === count && p === bytes.length };
+	return { version, truncated, slots, count, players, records, warning, complete: !warning && records.length === count && p === bytes.length };
 }
 
 /* ---------- the archive ---------- */
@@ -463,6 +528,7 @@ async function open_archive(bytes, zip, inflate) {
 	if (members["attribution.trk"]) {
 		try {
 			attribution = parse_attribution(members["attribution.trk"]);
+			if (attribution.warning) log.warnings.push(`attribution.trk: ${attribution.warning}`);
 		} catch (err) {
 			log.warnings.push(`attribution.trk: ${err.message}`);
 		}

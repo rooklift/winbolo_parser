@@ -61,7 +61,7 @@ async function main() {
 			for (let i = 0; i < grid.length; i++) if (grid[i] !== WinBoloLog.DEEP_SEA) land++;
 			let players = s.players.filter(p => p.in_use).map(p => `${p.slot}:${p.name}`).join(" ");
 			console.log(`${fmt_time(s.tick)} tick ${s.tick} offset ${s.offset}: ${s.pills.length} pills, ${s.bases.length} bases, ` +
-				`${s.starts.length} starts, ${land} land squares, time left ${s.time_left === 0xffffffff ? "unlimited" : s.time_left}; ${players}`);
+				`${s.starts.length} starts, ${land} land squares, game length ${s.game_length === 0 || s.game_length === 0xffffffff ? "unlimited" : s.game_length + " ms"}; ${players}`);
 		}
 		return;
 	}
@@ -70,8 +70,12 @@ async function main() {
 			console.log("no attribution.trk in this archive");
 			return;
 		}
-		for (let p of attribution.players) if (p.name) console.log(`slot ${p.slot} flags ${p.flags.join(",")} ${p.name}`);
-		for (let r of attribution.records) console.log(`${r.time} type ${r.type} ${r.raw.map(b => b.toString(16).padStart(2, "0")).join(" ")}`);
+		console.log(`version ${attribution.version}${attribution.truncated ? ", truncated" : ""}, ${attribution.count} records`);
+		for (let p of attribution.players) if (p.name) console.log(`slot ${p.slot} team ${p.team}${p.bot ? " bot" : ""} ${p.name}`);
+		for (let r of attribution.records) {
+			let { tick, type, name, ...fields } = r;
+			console.log(`${tick} ${name} ${Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(" ")}`);
+		}
 		return;
 	}
 	if (mode === "--chat") {
