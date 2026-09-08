@@ -51,9 +51,11 @@ The same three files run unchanged in a browser as classic scripts
 npm test
 ```
 
-The tests build a synthetic replay, so nothing from a real game is
-committed. A real replay dropped into `samples/` (gitignored) is parsed
-too when present.
+The tests build a synthetic replay and exercise the parser on it, then
+parse every `.wbv` in `samples/` in full. That directory holds one real
+game, `smol_war.wbv`: a two-player strict game on Smol War, 28 minutes,
+logged by a WinBolo 2.0.3 server. It is also the file to try the viewer
+on.
 
 # WinBolo Replay Viewer
 

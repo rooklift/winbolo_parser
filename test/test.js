@@ -1,7 +1,7 @@
 /* Tests: the zip reader and the log parser against a synthetic archive
  * (built here with Node's zlib, so nothing private is committed), the
- * replay engine on it, the viewer build's freshness, and, when a real
- * replay sits in samples/ (gitignored), a full parse of that. */
+ * replay engine on it, the viewer build's freshness, and a full parse of
+ * every real replay in samples/. */
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -314,11 +314,9 @@ function test_viewer_build() {
 
 async function test_sample() {
 	let dir = path.join(root, "samples");
-	if (!fs.existsSync(dir)) {
-		console.log("skip samples/ (none present)");
-		return;
-	}
-	for (let f of fs.readdirSync(dir).filter(f => f.endsWith(".wbv"))) {
+	let files = fs.readdirSync(dir).filter(f => f.endsWith(".wbv"));
+	check("samples/ holds a real replay", files.length > 0);
+	for (let f of files) {
 		let bytes = new Uint8Array(fs.readFileSync(path.join(dir, f)));
 		let { log } = await WinBoloLog.open_archive(bytes, zip, inflate);
 		check(`${f}: parses to the quit record`, log.finished && log.warnings.length === 0, log.warnings.join("; "));
