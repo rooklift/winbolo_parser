@@ -108,9 +108,10 @@ build" workflow in the Actions tab builds any branch by hand.
 ## Status
 
 A server log begins when the server starts, usually long before the game
-does. The replay begins at the game start the server marks (the clock,
-the seek bar and the message wire all count from there); the lobby
-before it is not shown. The map name follows the server's "Map changed
+does. The replay begins at the game start the server marks (the clock
+and the seek bar count from there); the lobby before it is not played,
+but its chat is on the message wire at negative times, so the panel
+opens on it. The map name follows the server's "Map changed
 to" announcements, since the header names only the map the server began
 with. The log records every mine, hidden or not, so the replay shows
 them all.

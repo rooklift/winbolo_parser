@@ -468,12 +468,16 @@ function go_to_boundary(at_end) {
 	set_clock(at_end ? game.t1 : game.t0, !at_end);
 }
 
+/* m:ss from the game start, or h:mm:ss past an hour. A tick before the
+ * start (lobby chat on the wire) is negative, counted up to the second
+ * it falls in, so the last tick before the start reads -0:01. */
 function fmt_time(ticks) {
-	let s = Math.max(0, Math.floor((ticks - game.t0) / TPS));
+	let d = ticks - game.t0;
+	let s = d < 0 ? Math.ceil(-d / TPS) : Math.floor(d / TPS);
 	let h = Math.floor(s / 3600);
 	let m = Math.floor(s / 60) % 60;
-	let text = `${m}:${String(s % 60).padStart(2, "0")}`;
-	return h ? `${h}:${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}` : text;
+	let text = h ? `${h}:${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}` : `${m}:${String(s % 60).padStart(2, "0")}`;
+	return d < 0 ? "-" + text : text;
 }
 
 function update_transport() {

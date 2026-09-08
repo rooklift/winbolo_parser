@@ -598,8 +598,11 @@ function* build_steps(log) {
 	let game = {
 		log, header: log.header, events, snapshots: snaps,
 		/* the lobby before the game is not part of the replay: the clock,
-		 * the wire and the effects all begin at the start */
-		chat: chat.filter(m => m.tick >= start && m.kind !== "game_start"), /* the replay begins there: the line would say what the clock says */
+		 * the seek bar and the effects all begin at the start. The wire
+		 * keeps the lobby's lines, at negative times, so the chat before
+		 * the game is not lost; the "game started" line is the point the
+		 * times turn positive, which the times show by themselves */
+		chat: chat.filter(m => m.kind !== "game_start"),
 		fall_segments: fall_segments.filter(s => s.start >= start),
 		/* the server's announcements from the whole log, lobby included:
 		 * the map changes happen there */
