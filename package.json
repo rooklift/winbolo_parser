@@ -1,0 +1,16 @@
+{
+	"name": "winbolo_parser",
+	"version": "0.1.0",
+	"description": "Parser and replay viewer for WinBolo game logs (.wbv)",
+	"main": "src/parse.js",
+	"bin": {
+		"wbvdump": "bin/dump.js"
+	},
+	"scripts": {
+		"test": "node test/test.js",
+		"build-viewer": "node tools/build-viewer-parser.js"
+	},
+	"engines": {
+		"node": ">=18"
+	}
+}

@@ -1,0 +1,33 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"productName": "WinBolo Replay Viewer",
+	"version": "../package.json",
+	"identifier": "com.rooklift.winbolo-replay-viewer",
+	"build": {
+		"frontendDist": "www",
+		"beforeBuildCommand": "node stage.mjs",
+		"beforeDevCommand": "node stage.mjs"
+	},
+	"app": {
+		"withGlobalTauri": true,
+		"windows": [
+			{
+				"label": "main",
+				"title": "WinBolo Replay Viewer",
+				"width": 1280,
+				"height": 860,
+				"backgroundColor": "#10131a",
+				"devtools": true
+			}
+		],
+		"security": {
+			"csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'"
+		}
+	},
+	"bundle": {
+		"active": false,
+		"icon": ["icons/icon.ico", "icons/icon.png"],
+		"copyright": "Copyright 2026 Rooklift",
+		"shortDescription": "Plays back WinBolo game logs"
+	}
+}

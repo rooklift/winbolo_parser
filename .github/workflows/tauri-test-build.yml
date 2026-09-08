@@ -1,0 +1,65 @@
+name: Tauri test build
+
+# A hand-started build of the Windows Tauri app, for trying out a branch
+# before it is released: nothing is attached to any release, and the bare
+# exe is left as a workflow artifact to download from the run's page (the
+# download is a zip holding the single .exe). Only runs from the Actions
+# tab; pushes never trigger it.
+#
+# The branch picked in the "Run workflow" menu is what gets built, unless
+# the ref input names something else. That input is for branches, tags or
+# commits that don't carry this file themselves: the workflow runs from the
+# picked branch's copy of it but checks out and builds whatever ref says.
+#
+# The steps are the same as the tauri-windows job in release-builds.yml,
+# minus the tag checks and the release upload.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag or commit to build; leave blank to build the branch picked above"
+        required: false
+        default: ""
+
+jobs:
+  tauri-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Describe the build
+        id: describe
+        working-directory: viewer
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          sha="$(git rev-parse --short HEAD)"
+          echo "Building viewer ${version} from $(git rev-parse HEAD)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: viewer/tauri
+
+      - name: Build
+        working-directory: viewer/tauri
+        run: npx --yes @tauri-apps/cli@2.11.4 build # bundling is off in tauri.conf.json: the bare exe is the product
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: winbolo-replay-viewer-${{ steps.describe.outputs.version }}-windows-tauri-${{ steps.describe.outputs.sha }}
+          path: viewer/tauri/target/release/winbolo-replay-viewer.exe
+          if-no-files-found: error

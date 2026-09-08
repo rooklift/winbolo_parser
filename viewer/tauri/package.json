@@ -1,0 +1,9 @@
+{
+	"name": "winbolo-replay-viewer-tauri",
+	"private": true,
+	"description": "Marks this directory as the Tauri app's frontend root, so the Tauri CLI runs stage.mjs from here rather than from viewer/.",
+	"scripts": {
+		"build": "npx --yes @tauri-apps/cli@2.11.4 build",
+		"dev": "npx --yes @tauri-apps/cli@2.11.4 dev"
+	}
+}

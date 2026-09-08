@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<!-- 'unsafe-inline' for styles: the renderer colours player chips and chat
+	     names with style attributes in generated HTML. connect-src names the
+	     Tauri app's command channel; Electron and browsers ignore it. -->
+	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'">
+	<title>WinBolo Replay Viewer</title>
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+	<div id="layout">
+		<div id="main">
+			<canvas id="view"></canvas>
+			<div id="coordinateDebug" hidden>
+				<div>tile <span id="coordinateTile"></span></div>
+				<div>pixel <span id="coordinatePixel"></span></div>
+			</div>
+			<div id="dropHint">
+				<div>
+					<h1>WinBolo Replay Viewer</h1>
+					<p id="dropHintText">Starting up...</p>
+					<p id="dropHintLink" hidden>For more information, see <a href="https://github.com/rooklift/winbolo_parser" target="_blank" rel="noopener">github.com/rooklift/winbolo_parser</a></p>
+				</div>
+			</div>
+			<div id="transport">
+				<button id="playBtn" title="Play / pause (space)">▶</button>
+				<span id="timeLabel">0:00 / 0:00</span>
+				<input id="seek" type="range" min="0" max="1000" value="0" step="1">
+				<select id="speed" title="Playback speed">
+					<option value="0.5">0.5×</option>
+					<option value="1" selected>1×</option>
+					<option value="1.5">1.5×</option>
+					<option value="2">2×</option>
+					<option value="3">3×</option>
+					<option value="4">4×</option>
+					<option value="6">6×</option>
+					<option value="8">8×</option>
+					<option value="12">12×</option>
+					<option value="16">16×</option>
+					<option value="24">24×</option>
+					<option value="32">32×</option>
+					<option value="48">48×</option>
+					<option value="64">64×</option>
+				</select>
+				<select id="viewpoint" title="Player used for friendly colours and player lock"></select>
+				<span id="zoomLabel"></span>
+			</div>
+		</div>
+		<div id="sidebar">
+			<div class="panel" id="gamePanel">
+				<h2 id="mapName">No replay loaded</h2>
+				<div id="gameMeta" class="hint"></div>
+				<div id="versionMeta" class="hint"></div>
+				<div id="gameTypeMeta" class="hint"></div>
+			</div>
+			<div class="panel">
+				<h2>Players</h2>
+				<div id="players"></div>
+			</div>
+			<div class="panel" id="chatPanel">
+				<h2>Message wire</h2>
+				<div id="chat"></div>
+			</div>
+		</div>
+	</div>
+	<input type="file" id="filePick" accept=".wbv,.dat,application/zip" hidden>
+	<script src="format.js"></script>
+	<script src="sprites.js"></script>
+	<script src="logparse.js"></script>
+	<script src="game.js"></script>
+	<script src="tauri_api.js"></script>
+	<script src="renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,181 @@
+/* Layout and palette follow the Ancient Bolo Log Viewer (itself after the
+ * lgm map editor's dark theme), so the two viewers look like siblings. */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #layout { height: 100%; }
+
+body {
+	background: #10131a;
+	color: #cfd6e4;
+	font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+	overflow: hidden;
+	user-select: none;
+}
+
+#layout { display: flex; }
+
+#main {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	position: relative;
+}
+
+#view {
+	flex: 1;
+	width: 100%;
+	min-height: 0;
+	cursor: grab;
+	display: block;
+	background: #0a0e16;
+}
+
+#coordinateDebug {
+	position: absolute;
+	top: 10px;
+	left: 10px;
+	padding: 5px 8px;
+	background: rgba(10, 14, 22, 0.88);
+	border: 1px solid #53617b;
+	border-radius: 4px;
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+	color: #cfd6e4;
+	font: 12px/1.4 ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
+	font-variant-numeric: tabular-nums;
+	pointer-events: none;
+	z-index: 1;
+}
+
+#coordinateDebug span {
+	display: inline-block;
+	min-width: 9ch;
+	text-align: right;
+}
+
+#dropHint {
+	position: absolute;
+	inset: 0 0 40px 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	text-align: center;
+	color: #8b96ad;
+	cursor: pointer; /* the whole hint is the open button */
+}
+#dropHint h1 { font-size: 20px; margin-bottom: 8px; color: #cfd6e4; }
+#dropHintLink { margin-top: 8px; }
+#dropHintLink a { color: #5b8def; }
+#dropHint.hidden { display: none; }
+
+#transport {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 6px 10px;
+	background: #161b26;
+	border-top: 1px solid #262d3d;
+}
+#transport button {
+	background: #232b3d;
+	border: 1px solid #33405c;
+	color: #cfd6e4;
+	border-radius: 4px;
+	width: 34px;
+	height: 26px;
+	font-size: 13px;
+	cursor: pointer;
+}
+#transport button:hover { background: #2c3650; }
+#transport select {
+	background: #232b3d;
+	border: 1px solid #33405c;
+	color: #cfd6e4;
+	border-radius: 4px;
+	height: 26px;
+}
+/* Player lock active: the player selector takes the viewer's friendly
+ * green, in shades matched to the dark controls. */
+#viewpoint.locked {
+	background: #1e3d27;
+	border-color: #418a54;
+	color: #b5efc2;
+}
+#seek { flex: 1; accent-color: #5b8def; }
+
+/* Transport controls are mouse-driven (all keys are global), so never show
+ * a focus highlight on them. */
+#transport button:focus, #transport select:focus, #seek:focus { outline: none; }
+#timeLabel { font-variant-numeric: tabular-nums; white-space: nowrap; }
+#zoomLabel { color: #8b96ad; white-space: nowrap; }
+
+#sidebar {
+	width: 322px;
+	background: #141925;
+	border-left: 1px solid #262d3d;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.panel {
+	padding: 10px 12px;
+	border-bottom: 1px solid #232939;
+}
+.panel h2 {
+	font-size: 12px;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: #8b96ad;
+	margin-bottom: 6px;
+}
+/* Integral line height, so consecutive lines sit an even number of
+ * pixels apart on a 1x display. */
+.hint { color: #8b96ad; font-size: 12px; line-height: 17px; }
+
+#players .player {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 2px 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+#players .chip {
+	width: 10px;
+	height: 10px;
+	border-radius: 2px;
+	flex: none;
+	border: 1px solid rgba(255, 255, 255, 0.35);
+}
+#players .player.gone { color: #667; text-decoration: line-through; }
+#players .host { color: #8b96ad; font-size: 11px; }
+
+#chatPanel {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	border-bottom: none;
+}
+#chat {
+	flex: 1;
+	overflow-y: auto;
+	font-size: 14px;
+	min-height: 0;
+}
+/* Slim dark scrollbar to match the panel */
+#chat { scrollbar-width: thin; scrollbar-color: #2c3650 transparent; }
+#chat::-webkit-scrollbar { width: 8px; }
+#chat::-webkit-scrollbar-track { background: transparent; }
+#chat::-webkit-scrollbar-thumb {
+	background: #2c3650;
+	border-radius: 4px;
+}
+#chat::-webkit-scrollbar-thumb:hover { background: #3a4763; }
+
+#chat .msg { padding: 1px 0; word-wrap: break-word; }
+#chat .msg .t { color: #667a99; font-variant-numeric: tabular-nums; }
+#chat .msg .who { font-weight: 600; }
+#chat .msg.sys { color: #8b96ad; font-style: italic; }

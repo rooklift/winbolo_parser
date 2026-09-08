@@ -1,0 +1,89 @@
+name: Release build
+
+# Runs only when a release is published (drafts don't count until you hit
+# "Publish release"), builds the Windows Tauri app from the tagged commit,
+# and attaches the zip to that release. Ordinary pushes to main never
+# trigger it. The Electron folders are not built here: viewer/builder.py
+# makes those by hand from a downloaded Electron release.
+#
+# It can also be run by hand from the Actions tab: give it an existing
+# release tag to build and attach the asset for, or leave the tag blank to
+# just build and get the zip as a workflow artifact.
+#
+# The build is a real compile, on a Windows runner that has Rust, Node and
+# WebView2 already; nothing is installed beyond the pinned Tauri CLI.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build and attach assets to (e.g. v1.1.1); leave blank to only build"
+        required: false
+        default: ""
+
+jobs:
+  tauri-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write # needed to upload assets to the release
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG || github.ref }}
+
+      - name: Read the viewer version
+        id: version
+        working-directory: viewer
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Check the tag matches the viewer version
+        if: env.RELEASE_TAG != ''
+        run: |
+          if [ "${RELEASE_TAG}" != "v${{ steps.version.outputs.version }}" ]; then
+            echo "Release tag ${RELEASE_TAG} does not match viewer/package.json version ${{ steps.version.outputs.version }}; refusing to attach mismatched assets."
+            exit 1
+          fi
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: viewer/tauri
+
+      - name: Build
+        working-directory: viewer/tauri
+        run: npx --yes @tauri-apps/cli@2.11.4 build # bundling is off in tauri.conf.json: the bare exe is the product
+
+      - name: Zip the exe
+        working-directory: viewer/tauri
+        env:
+          NAME: winbolo-replay-viewer-${{ steps.version.outputs.version }}-windows-tauri
+        run: |
+          mkdir -p "dist/${NAME}"
+          cp target/release/winbolo-replay-viewer.exe "dist/${NAME}/"
+          (cd dist && 7z a -tzip "${NAME}.zip" "${NAME}" > /dev/null)
+          ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tauri-windows
+          path: viewer/tauri/dist/*.zip
+          if-no-files-found: error
+
+      - name: Attach the zip to the release
+        if: env.RELEASE_TAG != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${RELEASE_TAG}" viewer/tauri/dist/*.zip --clobber --repo "${GITHUB_REPOSITORY}"
