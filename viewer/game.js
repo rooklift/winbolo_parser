@@ -646,8 +646,10 @@ function game_start_tick(log) {
 	for (let e of log.events) {
 		if (e.type === EV.LobbyExit) { marker = e.tick; break; }
 	}
+	/* the populated snapshot the server writes a tick after the marker;
+	 * a later one is a periodic snapshot, not the start */
 	for (let s of log.snapshots) {
-		if (s.tick >= marker && s.players.some(p => p.in_use)) return s.tick;
+		if (s.tick >= marker && s.tick <= marker + 2 && s.players.some(p => p.in_use)) return s.tick;
 	}
 	for (let e of log.events) {
 		if (e.type === EV.PlayerLocation && e.in_world && e.tick >= marker) return e.tick;

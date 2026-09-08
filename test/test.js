@@ -100,7 +100,7 @@ function synthetic_log() {
 			event(1, [1, 0x55, 0x53, 0, 0, ...pstr("Bob")]),
 			event(3, [0, 100, 100, 0x88, 0x41]),                                 /* Alice's tank east, on a boat */
 			event(19, [0, ...pstr("hi")])]),
-		2, 1, 0,                                                                 /* 256 empty ticks */
+		2, 0, 1,                                                                 /* 256 empty ticks (a little-endian count) */
 		...block([event(4, [0x02, 101, 100, 0x84]),                              /* tick 268: Alice's man out, frame 2 */
 			event(6, [101, 100, 0x88, 9 + 4]),                                   /* a shell flying east */
 			event(6, [102, 100, 0x88, 8]),                                       /* a fresh explosion */
@@ -111,7 +111,7 @@ function synthetic_log() {
 			event(33, [1, 0]),                                                   /* Alice kills Bob */
 			event(99, [1, 2, 3])]),                                              /* an unknown event, skipped */
 		...block([event(32, [0]), event(2, [1])]),                               /* tick 269: Alice loses her man; Bob quits */
-		2, 0, 255,                                                               /* 255 empty ticks */
+		2, 255, 0,                                                               /* 255 empty ticks (a little-endian count) */
 		/* ticks 525-527: a shell flies east along row 100 from Alice's tank at
 		 * (100.5, 100.5), then a gap tick, then a burst a step on with nothing
 		 * hit: a fall (its corner pixel is not the square's origin) */
@@ -142,6 +142,9 @@ function synthetic_log() {
 		/* ticks 567-568: Alice's team message is logged once per recipient */
 		...block([event(20, [0, 0, ...pstr("push")])]),
 		...block([event(20, [0, 1, ...pstr("push")]), event(20, [0, 2, ...pstr("push")])]),
+		/* a mid-game snapshot, with the one-tick no-events record the server
+		 * writes after every snapshot: no tick passes in it */
+		...snapshot(), 1, 1,
 		/* ticks 569-594: Alice respawns on a boat again; a shell from nowhere
 		 * (no tank or pillbox near (97.6, 100.5)) flies east and sinks her */
 		...block([event(3, [0, 100, 100, 0x88, 0x41])]),                          /* tick 569: on a boat */
@@ -201,7 +204,8 @@ async function test_synthetic() {
 	check("header max players", h.max_players === 16);
 	check("tick count", log.ticks === 595, String(log.ticks));
 	check("finished", log.finished && log.warnings.length === 0, log.warnings.join("; "));
-	check("snapshot count", log.snapshots.length === 1);
+	check("snapshot count", log.snapshots.length === 2);
+	check("the no-events record after a snapshot takes no tick", log.snapshots[1].tick === 569 && log.events.some(e => e.tick === 569 && e.type === 3), String(log.snapshots[1].tick));
 	let s = log.snapshots[0];
 	check("snapshot pill", s.pills.length === 1 && s.pills[0].x === 101 && s.pills[0].owner === 0xff && s.pills[0].armour === 15);
 	check("snapshot base", s.bases.length === 1 && s.bases[0].shells === 90);

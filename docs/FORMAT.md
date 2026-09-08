@@ -51,7 +51,7 @@ records, each starting with a type byte:
 |------|-----------------------|------------------------------------------------------|
 | 0    | quit                  | one more byte, also 0; the log ends here             |
 | 1    | no events             | 1 byte: that many ticks passed with nothing to log   |
-| 2    | no events, long       | 2 bytes: as above, 256 or more ticks                 |
+| 2    | no events, long       | 2 bytes, **little-endian**: as above, 256 or more ticks |
 | 3    | events                | 1 byte: the number of events in this tick, then them |
 | 4    | events, long          | 2 bytes: as above, 256 or more events                |
 | 5    | snapshot              | the full game state, below; takes no tick            |
@@ -62,6 +62,26 @@ before it: the server flushes the pending tick before writing one. The
 server writes a snapshot at the start and then every 125 ticks (2.5 s;
 600 in the public source), skipping the write when nothing has happened
 since the last one.
+
+The long no-events count is little-endian, the one count in the stream
+that is (the 2.03 specification says big-endian; the bytes say otherwise:
+read little-endian every such count in three logs is 256 or more, as a
+writer that uses the short record up to 255 produces, and read big-endian
+they are noise). Reading it big-endian turns a five-second wait into
+minutes.
+
+**The no-events record after a snapshot is one tick too long.** Nearly
+every snapshot is followed by a no-events record of 1, in the middle of
+play, and no game tick happens in it: a shell in flight across the
+snapshot moves one step, not two, and the attribution track's 10 ms
+clock, which does not count it, agrees to within a tick over a round
+once it is dropped. When the game is quiet the extra tick is folded into
+a longer no-events record after the snapshot. The parser takes one tick
+off the first no-events record after a snapshot. A reader that keeps it
+runs 0.8 % fast, six seconds over a thirteen-minute round; the official
+viewer keeps it, and also counts the snapshot record itself and every
+no-events record as a tick more, so its clock runs 2 to 3 % ahead of the
+game's.
 
 ### Version 2 changes to the stream
 
@@ -252,10 +272,13 @@ records              type byte, 4-byte tick, then a fixed payload by type
 ```
 
 Record ticks are the server's internal 10 ms steps, twice the log's rate,
-counted from the start of the round: they line up with the log's ticks
-only from the snapshot after LobbyExit (the file's tick 0 when there was
-no lobby), and the offset is not stored. Records carry no length, so a
-reader that meets a type it does not know must stop.
+counted from the start of the round, and the offset is not stored. With
+the tick after each snapshot dropped (above) they match the log's ticks
+exactly: from LobbyExit in 2.0.3 logs, where the lobby countdown precedes
+it, and five seconds after LobbyExit in 2.0.2 logs, which write LobbyExit
+as the countdown starts and hold the tanks placed but still until it
+ends. Records carry no length, so a reader that meets a type it does not
+know must stop.
 
 | type | name     | payload                                                                  |
 |------|----------|--------------------------------------------------------------------------|

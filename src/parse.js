@@ -355,6 +355,12 @@ function* parse_steps(bytes) {
 	let p = header.offset;
 	let finished = false;
 	let next_yield = 0;
+	let after_snapshot = false;
+	/* The no-events record that follows a snapshot counts one tick too
+	 * many: the game does not run during it (a shell in flight across a
+	 * snapshot moves one step, not two, and the attribution track's clock
+	 * agrees). Its count is trimmed by one, so a bare 1 takes no tick. */
+	let idle = n => after_snapshot && n > 0 ? n - 1 : n;
 
 	while (p < bytes.length) {
 		if (p >= next_yield) {
@@ -372,12 +378,15 @@ function* parse_steps(bytes) {
 			break;
 		} else if (rec === REC_NOEVENTS) {
 			if (p + 2 > bytes.length) break;
-			tick += bytes[p + 1];
+			tick += idle(bytes[p + 1]);
 			p += 2;
+			after_snapshot = false;
 		} else if (rec === REC_NOEVENTS_LONG) {
 			if (p + 3 > bytes.length) break;
-			tick += be16(bytes, p + 1);
+			/* little-endian, alone among the stream's counts */
+			tick += idle(bytes[p + 1] | (bytes[p + 2] << 8));
 			p += 3;
+			after_snapshot = false;
 		} else if (rec === REC_EVENT || rec === REC_EVENT_LONG) {
 			let count;
 			if (rec === REC_EVENT) {
@@ -406,12 +415,14 @@ function* parse_steps(bytes) {
 				p += 3 + len;
 			}
 			tick++;
+			after_snapshot = false;
 		} else if (rec === REC_SNAPSHOT) {
 			let s = parse_snapshot(bytes, p + 1, tick);
 			s.event_index = events.length; /* first event at or after this snapshot */
 			delete s.end;
 			snapshots.push(s);
 			p = s.end === undefined ? snapshot_end(bytes, p + 1) : s.end;
+			after_snapshot = true;
 		} else {
 			warnings.push(`offset ${p}: unknown record type ${rec} at tick ${tick}; stopping`);
 			break;
