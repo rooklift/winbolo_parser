@@ -68,7 +68,7 @@ let pillbox_ids_enabled = false;
  * switched on. The lobby's lines, before the start, can be hidden too;
  * the divider stays either way. */
 let event_messages_enabled = false;
-let pregame_messages_enabled = true;
+let pregame_messages_enabled = false;
 let obj_imgs = new Map();
 
 function load_obj_sprites() {

@@ -163,6 +163,7 @@ body {
 	flex: 1;
 	overflow-y: auto;
 	font-size: 14px;
+	line-height: 20px; /* whole pixels: the body's 1.45 would give 20.3px, and the lines would snap unevenly */
 	min-height: 0;
 }
 /* Slim dark scrollbar to match the panel */

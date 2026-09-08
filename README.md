@@ -100,7 +100,7 @@ build" workflow in the Actions tab builds any branch by hand.
 | L                    | lock the view to the viewpoint player           |
 | G, T, M, B, N        | simple graphics, simple terrain, simple LGM, big shots, neutral pill colour |
 | E                    | event messages on the wire (joins, deaths, alliances, votes); off by default, chat only |
-| P                    | pre-game messages on the wire (the lobby, at negative times); on by default |
+| P                    | pre-game messages on the wire (the lobby, at negative times); off by default |
 | D, I                 | debug coordinates, pillbox IDs                  |
 | Ctrl+S               | save the map as it was at the start, as a BMAPBOLO file |
 
