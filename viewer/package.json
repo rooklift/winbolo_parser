@@ -1,6 +1,6 @@
 {
 	"name": "winbolo-replay-viewer",
-	"version": "1.0.3",
+	"version": "1.0.4",
 	"description": "WinBolo Replay Viewer: plays back WinBolo game logs",
 	"main": "main.js",
 	"scripts": {
