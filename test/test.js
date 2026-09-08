@@ -54,17 +54,16 @@ function snapshot() {
 	return [5, ...be32(0), ...be32(0xffffffff), pills.length, ...pills, bases.length, ...bases, starts.length, ...starts, ...runs(), ...players];
 }
 
-/* A pillbox shell from (101.5, 102.5) heading north-north-west (direction 15)
- * for 17 ticks, then its burst on Alice's tank at (100.5, 100.5), her boat
- * flag dropping, and her drowning a tick later. */
-function boat_shell(tick0) {
+/* A shell from (x, y) heading dir for n ticks, then its burst on Alice's
+ * tank at (100.5, 100.5), her boat flag dropping, and her drowning a tick
+ * later. */
+function boat_shell(tick0, x, y, dir, n) {
 	let out = [];
-	let x = 101.5, y = 102.5;
-	let hx = Math.sin(15 / 16 * 2 * Math.PI), hy = -Math.cos(15 / 16 * 2 * Math.PI);
+	let hx = Math.sin(dir / 16 * 2 * Math.PI), hy = -Math.cos(dir / 16 * 2 * Math.PI);
 	let pos = (v) => { let m = Math.floor(v), p = Math.round((v - m) * 16); if (p === 16) { m++; p = 0; } return [m, p]; };
-	for (let i = 0; i < 17; i++) {
+	for (let i = 0; i < n; i++) {
 		let [mx, px] = pos(x), [my, py] = pos(y);
-		out.push(...block([event(6, [mx, my, (px << 4) | py, 9 + 15])]));
+		out.push(...block([event(6, [mx, my, (px << 4) | py, 9 + dir])]));
 		x += hx / 8; y += hy / 8;
 	}
 	x += hx / 8; y += hy / 8; /* the fatal step */
@@ -133,15 +132,20 @@ function synthetic_log() {
 		...block([event(5, [100, 100, 3])]),                                     /* tick 543: it goes off */
 		...block([event(3, [0, 0, 0, 0, 0x40])]),                                /* tick 544: her tank vanishes, no death logged */
 		...block([event(3, [0, 100, 100, 0x88, 0x40])]),                          /* tick 545: Alice respawns */
-		...block([event(33, [0, 0]), event(36, [0])]),                           /* tick 546: and drowns (killed by herself) */
+		...block([event(33, [0, 0]), event(36, [0]),                             /* tick 546: and drowns (killed by herself), */
+			event(6, [101, 100, 0x28, 9 + 4])]),                                 /* having fired east on her way out (101.125, 100.5) */
 		/* ticks 547-565: Alice respawns on a boat at (100.5, 100.5); the pillbox at
 		 * (101, 102) fires north-north-west, the shell reaches her, her boat flag
 		 * drops in the same tick, and she is logged as killed by herself */
 		...block([event(3, [0, 100, 100, 0x88, 0x41])]),                          /* tick 547: on a boat */
-		...boat_shell(548),
+		...boat_shell(548, 101.5, 102.5, 15, 17),
 		/* ticks 567-568: Alice's team message is logged once per recipient */
 		...block([event(20, [0, 0, ...pstr("push")])]),
 		...block([event(20, [0, 1, ...pstr("push")]), event(20, [0, 2, ...pstr("push")])]),
+		/* ticks 569-594: Alice respawns on a boat again; a shell from nowhere
+		 * (no tank or pillbox near (97.6, 100.5)) flies east and sinks her */
+		...block([event(3, [0, 100, 100, 0x88, 0x41])]),                          /* tick 569: on a boat */
+		...boat_shell(570, 97.6, 100.5, 4, 23),
 		0, 0,
 	];
 	return Uint8Array.from([...header, ...body]);
@@ -195,7 +199,7 @@ async function test_synthetic() {
 	check("header bolo version", h.bolo_version === "2.0.3");
 	check("header created", h.created === 1700000000);
 	check("header max players", h.max_players === 16);
-	check("tick count", log.ticks === 569, String(log.ticks));
+	check("tick count", log.ticks === 595, String(log.ticks));
 	check("finished", log.finished && log.warnings.length === 0, log.warnings.join("; "));
 	check("snapshot count", log.snapshots.length === 1);
 	let s = log.snapshots[0];
@@ -231,11 +235,14 @@ async function test_synthetic() {
 	check("pillbox kill", pill_kill.name === "KillPlayer" && pill_kill.player === 0 && pill_kill.killer === 0xff);
 
 	let game = WinBoloGame.build(log);
-	check("game length", game.t1 === 569);
+	check("game length", game.t1 === 595);
 	check("game starts at the marker", game.t0 === 11, String(game.t0));
-	check("chat wire starts at the game", game.chat.map(m => m.kind).join(",") === "join,say,kill,lost_man,quit,pill_kill,mine_kill,drowned,boat_sunk,say", game.chat.map(m => m.kind).join(","));
+	check("chat wire starts at the game", game.chat.map(m => m.kind).join(",") === "join,say,kill,lost_man,quit,pill_kill,mine_kill,drowned,boat_sunk,say,boat_sunk", game.chat.map(m => m.kind).join(","));
 	check("a team message's copies fold into one line", game.chat[9].text === "push" && game.chat[9].tick === 567 && game.chat[9].to.join(",") === "0,1,2", JSON.stringify(game.chat[9]));
 	check("the sunk boat names the pillbox", game.chat[8].sinker_name === "a pillbox" && game.chat[8].name === "Alice" && game.chat[8].tick === 566, JSON.stringify(game.chat[8]));
+	check("a boat sunk by an unplaced shell names nobody", game.chat[10].sinker === null && game.chat[10].sinker_name === null && game.chat[10].name === "Alice" && game.chat[10].tick === 594, JSON.stringify(game.chat[10]));
+	let parting_shot = log.events.find(e => e.tick === 546 && e.type === 6);
+	check("a shell fired in the tick its tank dies is that tank's", parting_shot && parting_shot.owner === 0, JSON.stringify(parting_shot));
 	check("an unlogged death under a mine is a mine kill", game.chat[6].name === "Alice" && game.chat[6].tick === 544);
 	check("the unlogged death bursts", game.effects.some(e => e.type === "tank_death" && e.tick === 544 && Math.abs(e.x - 100.5) < 0.01));
 	check("the tank is gone after it", !WinBoloGame.state_at(game, 544).state.players[0].tank.in_world);
@@ -271,7 +278,7 @@ async function test_synthetic() {
 
 	/* a bare log.dat, no zip */
 	let bare = WinBoloLog.parse_log(log_bytes);
-	check("bare log parses the same", bare.events.length === log.events.length && bare.ticks === 569);
+	check("bare log parses the same", bare.events.length === log.events.length && bare.ticks === 595);
 	/* shell tracking: owners from muzzles, causes from consequences */
 	let flights = log.events.filter(e => e.type === 6 && e.dir !== undefined && e.tick >= 525 && e.tick < 548);
 	check("shell owner is the tank it left", flights.every(f => f.owner === 0), flights.map(f => f.owner).join(","));

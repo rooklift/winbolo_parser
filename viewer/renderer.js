@@ -576,7 +576,7 @@ function chat_line_parts(m) {
 		case "pill_kill": return sys(`✸ a pillbox killed ${who}`);
 		case "mine_kill": return sys(`✸ a mine killed ${who}`);
 		case "drowned": return sys(`✸ ${who} drowned`);
-		case "boat_sunk": return sys(`✸ ${pretty(m.sinker_name)} sank ${who}`);
+		case "boat_sunk": return sys(m.sinker_name ? `✸ ${pretty(m.sinker_name)} sank ${who}` : `✸ ${who} was sunk`);
 		case "died": return sys(`✸ ${who} died`);
 		case "lost_man": return sys(`✝ ${who} lost his builder`);
 		case "ally_request": return sys(`${who} asked ${pretty(m.other_name)} for an alliance`);

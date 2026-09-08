@@ -113,7 +113,10 @@ function track_tick(tr, tick, tick_events, state, effects, fall_segments) {
 			if (d <= best && dx * hx + dy * hy >= -0.25) { best = d; owner = who; }
 		};
 		for (let p of state.players) {
-			if (p.tank.in_world) consider(world_x(p.tank), world_y(p.tank), p.slot);
+			/* a tank that died this tick keeps its last position (see
+			 * PlayerLocation) and may have fired on its way out: the
+			 * shell is logged in the death tick, after the death */
+			if (p.tank.in_world || p.tank.died_at === tick) consider(world_x(p.tank), world_y(p.tank), p.slot);
 		}
 		for (let p of state.pills) {
 			if (!p.in_tank && p.armour > 0) consider(p.x + 0.5, p.y + 0.5, PILL_OWNER);
@@ -528,7 +531,10 @@ function apply_event(s, e, effects, chat) {
 				 * and the boat flag dropping, a tick or two before) */
 				let t = pl.tank;
 				if (t.boat_lost_at !== undefined && e.tick - t.boat_lost_at <= SINK_TICKS && t.hit_at !== undefined && e.tick - t.hit_at <= SINK_TICKS) {
-					push_chat("boat_sunk", { sinker: t.hit_by, sinker_name: t.hit_by === PILL_OWNER ? "a pillbox" : name_of(s, t.hit_by) });
+					/* the shooter is null when the tracker could not place the
+					 * shell's muzzle; the line then names nobody */
+					let sinker = t.hit_by === undefined ? null : t.hit_by;
+					push_chat("boat_sunk", { sinker, sinker_name: sinker === PILL_OWNER ? "a pillbox" : sinker === null ? null : name_of(s, sinker) });
 				} else {
 					push_chat("drowned");
 				}
