@@ -96,11 +96,11 @@ function synthetic_log() {
 		...block([event(1, [0, 0x47, 0x42, 0, 0, ...pstr("Alice")])]),          /* tick 0: Alice joins */
 		...block([event(39, [0]), event(42, [])]),                               /* tick 1: ready, countdown */
 		1, 9,                                                                    /* 9 empty ticks */
-		...block([event(38, []),                                                 /* tick 11: game start */
-			event(1, [1, 0x55, 0x53, 0, 0, ...pstr("Bob")]),
+		...block([event(38, []), event(23, [0, 1])]),                            /* tick 11: the game-start marker, and the lobby's alliance */
+		...block([event(1, [1, 0x55, 0x53, 0, 0, ...pstr("Bob")]),               /* tick 12: the world appears */
 			event(3, [0, 100, 100, 0x88, 0x41]),                                 /* Alice's tank east, on a boat */
 			event(19, [0, ...pstr("hi")])]),
-		2, 0, 1,                                                                 /* 256 empty ticks (a little-endian count) */
+		2, 255, 0,                                                               /* 255 empty ticks (a little-endian count) */
 		...block([event(4, [0x02, 101, 100, 0x84]),                              /* tick 268: Alice's man out, frame 2 */
 			event(6, [101, 100, 0x88, 9 + 4]),                                   /* a shell flying east */
 			event(6, [102, 100, 0x88, 8]),                                       /* a fresh explosion */
@@ -218,11 +218,11 @@ async function test_synthetic() {
 
 	let ev = log.events;
 	let names = ev.map(e => e.name);
-	check("event names", names.slice(0, 18).join(",") === "PlayerJoined,PlayerReady,CountdownStart,LobbyExit,PlayerJoined,PlayerLocation,MessageAll,LgmLocation,Shell,Shell,MapChange,PillSetHealth,PillSetOwner,BaseSetOwner,KillPlayer,event_99,LostMan,PlayerQuit", names.join(","));
+	check("event names", names.slice(0, 19).join(",") === "PlayerJoined,PlayerReady,CountdownStart,LobbyExit,AllyAccept,PlayerJoined,PlayerLocation,MessageAll,LgmLocation,Shell,Shell,MapChange,PillSetHealth,PillSetOwner,BaseSetOwner,KillPlayer,event_99,LostMan,PlayerQuit", names.join(","));
 	ev = ev.filter(e => e.tick < 500); /* the shell-tracking tail is checked below */
-	check("event ticks", ev.map(e => e.tick).join(",") === "0,1,1,11,11,11,11,268,268,268,268,268,268,268,268,268,269,269", ev.map(e => e.tick).join(","));
+	check("event ticks", ev.map(e => e.tick).join(",") === "0,1,1,11,11,12,12,12,268,268,268,268,268,268,268,268,268,269,269", ev.map(e => e.tick).join(","));
 	check("ready decodes", ev[1].player === 0);
-	ev = ev.filter(e => e.type < 37 || e.type > 42); /* the rest of the checks index the classic events */
+	ev = ev.filter(e => (e.type < 37 || e.type > 42) && e.type !== 23); /* the rest of the checks index the classic events, the start's alliance aside */
 	check("join decodes country", ev[0].player_name === "Alice" && ev[0].country === "GB" && ev[1].country === "US");
 	check("tank location decodes", ev[2].mx === 100 && ev[2].px === 8 && ev[2].dir === 4 && ev[2].on_boat === true && ev[2].in_world);
 	check("message decodes", ev[3].player === 0 && ev[3].text === "hi");
@@ -240,12 +240,13 @@ async function test_synthetic() {
 
 	let game = WinBoloGame.build(log);
 	check("game length", game.t1 === 595);
-	check("game starts at the marker", game.t0 === 11, String(game.t0));
+	check("game starts the tick after the marker, where the world appears", game.t0 === 12, String(game.t0));
 	let lobby = game.chat.filter(m => m.tick < game.t0);
 	let played = game.chat.filter(m => m.tick >= game.t0);
 	check("the lobby's lines stay on the wire, before the start", lobby.map(m => m.kind).join(",") === "join,ready,countdown", game.chat.map(m => m.kind).join(","));
-	check("the wire from the start opens with the game started line, at the start", played.map(m => m.kind).join(",") === "game_start,join,say,kill,lost_man,quit,pill_kill,mine_kill,drowned,boat_sunk,say,boat_sunk" && played[0].tick === game.t0, played.map(m => m.kind).join(","));
-	played = played.slice(1); /* the checks below index the game's own lines */
+	check("the wire from the start opens with the game started line, at the start", played.map(m => m.kind).join(",") === "game_start,ally_accept,join,say,kill,lost_man,quit,pill_kill,mine_kill,drowned,boat_sunk,say,boat_sunk" && played[0].tick === game.t0, played.map(m => m.kind).join(","));
+	check("the marker tick's alliance is the game's, at the start, after the game started line", played[1].tick === game.t0 && played[1].name === "Alice", JSON.stringify(played[1]));
+	played = played.slice(2); /* the checks below index the game's own lines */
 	check("a team message's copies fold into one line", played[9].text === "push" && played[9].tick === 567 && played[9].to.join(",") === "0,1,2", JSON.stringify(played[9]));
 	check("the sunk boat names the pillbox", played[8].sinker_name === "a pillbox" && played[8].name === "Alice" && played[8].tick === 566, JSON.stringify(played[8]));
 	check("a boat sunk by an unplaced shell names nobody", played[10].sinker === null && played[10].sinker_name === null && played[10].name === "Alice" && played[10].tick === 594, JSON.stringify(played[10]));
@@ -279,9 +280,9 @@ async function test_synthetic() {
 	check("state at 269: shells gone", later.shells.length === 0 && !later.players[0].lgm.out);
 	let early = WinBoloGame.state_at(game, 5).state;
 	check("state at 5: only Alice", early.players[0].in_use && !early.players[1].in_use && early.pills[0].armour === 15);
-	check("next change from 11", WinBoloGame.adjacent_change_tick(game, 11, 1) === 268);
-	check("previous change from 268", WinBoloGame.adjacent_change_tick(game, 268, -1) === 11);
-	check("previous change stops at the start", WinBoloGame.adjacent_change_tick(game, 11, -1) === 11);
+	check("next change from 12", WinBoloGame.adjacent_change_tick(game, 12, 1) === 268);
+	check("previous change from 268", WinBoloGame.adjacent_change_tick(game, 268, -1) === 12);
+	check("previous change stops at the start", WinBoloGame.adjacent_change_tick(game, 12, -1) === 12);
 	check("team of unallied", WinBoloGame.team_of(state, 1) === 1);
 
 	/* a bare log.dat, no zip */

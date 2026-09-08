@@ -595,15 +595,19 @@ function* build_steps(log) {
 		next_snap++;
 	}
 	let start = game_start_tick(log);
+	let marker = lobby_exit_tick(log);
+	if (marker < 0) marker = start;
 	let game = {
 		log, header: log.header, events, snapshots: snaps,
 		/* the lobby before the game is not part of the replay: the clock,
 		 * the seek bar and the effects all begin at the start. The wire
 		 * keeps the lobby's lines, at negative times, so the chat before
 		 * the game is not lost; the "game started" line divides them from
-		 * the game's, at the replay's start (the marker itself is a tick
-		 * or two earlier, where it would read -0:01) */
-		chat: chat.map(m => m.kind === "game_start" ? { ...m, tick: start } : m),
+		 * the game's. The server's marker is a tick or two before the
+		 * replay's start, and what it logs in that tick (the marker, the
+		 * lobby's alliances) is the game's beginning, so those lines are
+		 * moved up to the start, 0:00, rather than reading -0:01 */
+		chat: chat.map(m => m.tick >= marker && m.tick < start ? { ...m, tick: start } : m),
 		fall_segments: fall_segments.filter(s => s.start >= start),
 		/* the server's announcements from the whole log, lobby included:
 		 * the map changes happen there */
@@ -638,6 +642,14 @@ function land_bounds(grid) {
 	return maxx < 0 ? null : { minx, miny, maxx, maxy };
 }
 
+/* The tick of the server's game-start marker, or -1 without one. */
+function lobby_exit_tick(log) {
+	for (let e of log.events) {
+		if (e.type === EV.LobbyExit) return e.tick;
+	}
+	return -1;
+}
+
 /* The tick the game begins. A server log begins when the server starts,
  * often long before anyone plays; the server marks the start with a
  * GameStart event, writes the populated world one tick later and the
@@ -646,10 +658,7 @@ function land_bounds(grid) {
  * from a server that does not write it) starts where a tank first
  * appears, and one with no tanks at all at its beginning. */
 function game_start_tick(log) {
-	let marker = -1;
-	for (let e of log.events) {
-		if (e.type === EV.LobbyExit) { marker = e.tick; break; }
-	}
+	let marker = lobby_exit_tick(log);
 	/* the populated snapshot the server writes a tick after the marker;
 	 * a later one is a periodic snapshot, not the start */
 	for (let s of log.snapshots) {
