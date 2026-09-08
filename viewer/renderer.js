@@ -63,8 +63,9 @@ let use_simple_terrain = false;
 let use_neutral_pill_colour = false;
 let coordinate_debug_enabled = false;
 let pillbox_ids_enabled = false;
-/* The wire shows chat alone unless the event lines (joins, deaths,
- * alliances, votes, server notices) are switched on. */
+/* The wire shows chat alone (and the "game started" divider) unless the
+ * event lines (joins, deaths, alliances, votes, server notices) are
+ * switched on. */
 let event_messages_enabled = false;
 let obj_imgs = new Map();
 
@@ -625,7 +626,9 @@ function update_chat(tick = clock) {
 	let added = false;
 	while (chat_shown < game.chat.length && game.chat[chat_shown].tick <= tick) {
 		let m = game.chat[chat_shown++];
-		if (!event_messages_enabled && m.kind !== "say") continue;
+		/* the "game started" line is the divider between the lobby's chat
+		 * and the game's, so it shows even with the event lines off */
+		if (!event_messages_enabled && m.kind !== "say" && m.kind !== "game_start") continue;
 		chat_el.insertAdjacentHTML("beforeend", chat_line(m));
 		added = true;
 	}

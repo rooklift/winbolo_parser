@@ -243,8 +243,9 @@ async function test_synthetic() {
 	check("game starts at the marker", game.t0 === 11, String(game.t0));
 	let lobby = game.chat.filter(m => m.tick < game.t0);
 	let played = game.chat.filter(m => m.tick >= game.t0);
-	check("the lobby's lines stay on the wire, before the start", lobby.map(m => m.kind).join(",") === "join,ready,countdown" && !game.chat.some(m => m.kind === "game_start"), game.chat.map(m => m.kind).join(","));
-	check("the wire from the start", played.map(m => m.kind).join(",") === "join,say,kill,lost_man,quit,pill_kill,mine_kill,drowned,boat_sunk,say,boat_sunk", played.map(m => m.kind).join(","));
+	check("the lobby's lines stay on the wire, before the start", lobby.map(m => m.kind).join(",") === "join,ready,countdown", game.chat.map(m => m.kind).join(","));
+	check("the wire from the start opens with the game started line, at the start", played.map(m => m.kind).join(",") === "game_start,join,say,kill,lost_man,quit,pill_kill,mine_kill,drowned,boat_sunk,say,boat_sunk" && played[0].tick === game.t0, played.map(m => m.kind).join(","));
+	played = played.slice(1); /* the checks below index the game's own lines */
 	check("a team message's copies fold into one line", played[9].text === "push" && played[9].tick === 567 && played[9].to.join(",") === "0,1,2", JSON.stringify(played[9]));
 	check("the sunk boat names the pillbox", played[8].sinker_name === "a pillbox" && played[8].name === "Alice" && played[8].tick === 566, JSON.stringify(played[8]));
 	check("a boat sunk by an unplaced shell names nobody", played[10].sinker === null && played[10].sinker_name === null && played[10].name === "Alice" && played[10].tick === 594, JSON.stringify(played[10]));

@@ -600,9 +600,10 @@ function* build_steps(log) {
 		/* the lobby before the game is not part of the replay: the clock,
 		 * the seek bar and the effects all begin at the start. The wire
 		 * keeps the lobby's lines, at negative times, so the chat before
-		 * the game is not lost; the "game started" line is the point the
-		 * times turn positive, which the times show by themselves */
-		chat: chat.filter(m => m.kind !== "game_start"),
+		 * the game is not lost; the "game started" line divides them from
+		 * the game's, at the replay's start (the marker itself is a tick
+		 * or two earlier, where it would read -0:01) */
+		chat: chat.map(m => m.kind === "game_start" ? { ...m, tick: start } : m),
 		fall_segments: fall_segments.filter(s => s.start >= start),
 		/* the server's announcements from the whole log, lobby included:
 		 * the map changes happen there */
