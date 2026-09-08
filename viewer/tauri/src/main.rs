@@ -417,6 +417,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 		&item(app, "toggle-neutral-pill-colour", "Toggle neutral pill colour", "Ctrl+N")?,
 		&PredefinedMenuItem::separator(app)?,
 		&item(app, "toggle-event-messages", "Toggle event messages", "Ctrl+E")?,
+		&item(app, "toggle-pregame-messages", "Toggle pre-game messages", "Ctrl+P")?,
 		&PredefinedMenuItem::separator(app)?,
 		&item(app, "toggle-fullscreen", "Toggle Full Screen", "F11")?,
 	])?;

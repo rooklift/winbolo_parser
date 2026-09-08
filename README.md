@@ -66,7 +66,7 @@ friendly. It runs three ways from the same files.
 **As a web page:** open `viewer/index.html` in a browser, or serve the
 `viewer/` directory with any static file server. Drop a `.wbv` on it, or
 click to choose one. Toggle shortcuts on the web are bare keys (D, I, G,
-M, B, N, T, E, L) rather than Ctrl+key.
+M, B, N, T, E, P, L) rather than Ctrl+key.
 
 **As an [Electron](https://www.electronjs.org/) app:**
 
@@ -100,6 +100,7 @@ build" workflow in the Actions tab builds any branch by hand.
 | L                    | lock the view to the viewpoint player           |
 | G, T, M, B, N        | simple graphics, simple terrain, simple LGM, big shots, neutral pill colour |
 | E                    | event messages on the wire (joins, deaths, alliances, votes); off by default, chat only |
+| P                    | pre-game messages on the wire (the lobby, at negative times); on by default |
 | D, I                 | debug coordinates, pillbox IDs                  |
 | Ctrl+S               | save the map as it was at the start, as a BMAPBOLO file |
 
@@ -112,7 +113,7 @@ does. The replay begins at the game start the server marks (the clock
 and the seek bar count from there); the lobby before it is not played,
 but its chat is on the message wire at negative times, so the panel
 opens on it, with a "game started" line at 0:00 dividing it from the
-game's. The map name follows the server's "Map changed
+game's; P hides the lobby's lines. The map name follows the server's "Map changed
 to" announcements, since the header names only the map the server began
 with. The log records every mine, hidden or not, so the replay shows
 them all.

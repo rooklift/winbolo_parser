@@ -106,6 +106,7 @@ function build_menu() {
 				{ label: "Toggle neutral pill colour", accelerator: "CmdOrCtrl+N", click: () => send("toggle-neutral-pill-colour") },
 				{ type: "separator" },
 				{ label: "Toggle event messages", accelerator: "CmdOrCtrl+E", click: () => send("toggle-event-messages") },
+				{ label: "Toggle pre-game messages", accelerator: "CmdOrCtrl+P", click: () => send("toggle-pregame-messages") },
 				{ type: "separator" },
 				{ label: "Toggle Full Screen", accelerator: "F11", click: toggle_fullscreen },
 			],

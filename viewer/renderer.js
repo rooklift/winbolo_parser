@@ -65,8 +65,10 @@ let coordinate_debug_enabled = false;
 let pillbox_ids_enabled = false;
 /* The wire shows chat alone (and the "game started" divider) unless the
  * event lines (joins, deaths, alliances, votes, server notices) are
- * switched on. */
+ * switched on. The lobby's lines, before the start, can be hidden too;
+ * the divider stays either way. */
 let event_messages_enabled = false;
+let pregame_messages_enabled = true;
 let obj_imgs = new Map();
 
 function load_obj_sprites() {
@@ -627,8 +629,11 @@ function update_chat(tick = clock) {
 	while (chat_shown < game.chat.length && game.chat[chat_shown].tick <= tick) {
 		let m = game.chat[chat_shown++];
 		/* the "game started" line is the divider between the lobby's chat
-		 * and the game's, so it shows even with the event lines off */
-		if (!event_messages_enabled && m.kind !== "say" && m.kind !== "game_start") continue;
+		 * and the game's, so it shows whatever else is hidden */
+		if (m.kind !== "game_start") {
+			if (!event_messages_enabled && m.kind !== "say") continue;
+			if (!pregame_messages_enabled && m.tick < game.t0) continue;
+		}
 		chat_el.insertAdjacentHTML("beforeend", chat_line(m));
 		added = true;
 	}
@@ -1214,6 +1219,10 @@ function toggle_event_messages() {
 	event_messages_enabled = !event_messages_enabled;
 	if (game) rebuild_chat(clock);
 }
+function toggle_pregame_messages() {
+	pregame_messages_enabled = !pregame_messages_enabled;
+	if (game) rebuild_chat(clock);
+}
 
 function toggle_player_lock() {
 	if (!game || viewpoint < 0) return;
@@ -1383,6 +1392,9 @@ window.addEventListener("keydown", e => {
 	} else if (toggle_key(e, "KeyE")) {
 		e.preventDefault();
 		toggle_event_messages();
+	} else if (toggle_key(e, "KeyP")) {
+		e.preventDefault();
+		toggle_pregame_messages();
 	}
 });
 
@@ -1495,6 +1507,7 @@ if (window.api) {
 			case "toggle-simple-terrain": toggle_simple_terrain(); break;
 			case "toggle-neutral-pill-colour": toggle_neutral_pill_colour(); break;
 			case "toggle-event-messages": toggle_event_messages(); break;
+			case "toggle-pregame-messages": toggle_pregame_messages(); break;
 			case "toggle-coordinate-debug": toggle_coordinate_debug(); break;
 			case "toggle-pillbox-ids": toggle_pillbox_ids(); break;
 			case "save-map": save_map(); break;
