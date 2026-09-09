@@ -65,6 +65,9 @@ body {
 }
 #dropHint h1 { font-size: 20px; margin-bottom: 8px; color: #cfd6e4; }
 #dropHintLink { margin-top: 8px; }
+/* Set well below the rest: it's the afterthought, not part of how to open a replay. */
+#dropHintKeys { margin-top: 56px; }
+#dropHintKeys:hover { color: #cfd6e4; }		/* its own click target, not part of the open button */
 #dropHintLink a { color: #5b8def; }
 #dropHint.hidden { display: none; }
 
@@ -180,3 +183,67 @@ body {
 #chat .msg .t { color: #667a99; font-variant-numeric: tabular-nums; }
 #chat .msg .who { font-weight: 600; }
 #chat .msg.sys { color: #8b96ad; font-style: italic; }
+
+/* Shortcut sheet: the apps write their keys in their menus, so this is
+ * built and shown on the web page alone (renderer.js gates it). After the
+ * Ancient Bolo Log Viewer's, laid out in two flowing columns so a tall
+ * group doesn't leave a hole beside a short one. */
+#shortcutSheet {
+	position: fixed;
+	inset: 0;
+	z-index: 10;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16px;
+	background: rgba(10, 14, 22, 0.7);
+}
+#shortcutSheet.hidden { display: none; }
+#shortcutBox {
+	width: min(620px, 100%);
+	max-height: 100%;
+	overflow: auto;
+	background: #161b26;
+	border: 1px solid #33405c;
+	border-radius: 6px;
+	padding: 15px 17px 5px;		/* the last group's own margin makes up the rest */
+	box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+}
+#shortcutGroups { column-count: 2; column-gap: 22px; }
+.shortcutGroup { break-inside: avoid; margin-bottom: 10px; }
+.shortcutGroup h2 {
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: #8b96ad;
+	margin-bottom: 4px;
+	padding-bottom: 3px;
+	border-bottom: 1px solid #262d3d;
+}
+.shortcutRow {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	padding: 2px 0;
+}
+.shortcutRow .what { flex: 1; min-width: 0; }
+.shortcutRow .keys { display: flex; align-items: baseline; gap: 3px; flex: none; }
+.shortcutRow .sep { color: #6f7a91; }
+.shortcutRow .via { color: #8b96ad; font-size: 12px; flex: none; }
+#shortcutSheet kbd, #dropHint kbd {
+	display: inline-block;
+	background: #232b3d;
+	border: 1px solid #33405c;
+	border-bottom-width: 2px;
+	border-radius: 3px;
+	padding: 1px 5px;
+	min-width: 21px;
+	text-align: center;
+	font: 12px/1.5 ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
+	color: #cfd6e4;
+	white-space: nowrap;
+}
+/* A narrow browser window can't hold two columns of key caps. */
+@media (max-width: 620px) {
+	#shortcutGroups { column-count: 1; }
+}

@@ -22,6 +22,7 @@
 					<h1>WinBolo Replay Viewer</h1>
 					<p id="dropHintText">Starting up...</p>
 					<p id="dropHintLink" hidden>For more information, see <a href="https://github.com/rooklift/winbolo_parser" target="_blank" rel="noopener">github.com/rooklift/winbolo_parser</a></p>
+					<p id="dropHintKeys" hidden>Press <kbd>?</kbd> for keyboard shortcuts.</p>
 				</div>
 			</div>
 			<div id="transport">
@@ -46,6 +47,7 @@
 				</select>
 				<select id="viewpoint" title="Player used for friendly colours and player lock"></select>
 				<span id="zoomLabel"></span>
+				<button id="helpBtn" title="Keyboard and mouse shortcuts (?)" aria-expanded="false" hidden>?</button>
 			</div>
 		</div>
 		<div id="sidebar">
@@ -63,6 +65,11 @@
 				<h2>Message wire</h2>
 				<div id="chat"></div>
 			</div>
+		</div>
+	</div>
+	<div id="shortcutSheet" class="hidden">
+		<div id="shortcutBox" role="dialog" aria-label="Keyboard and mouse shortcuts">
+			<div id="shortcutGroups"></div>
 		</div>
 	</div>
 	<input type="file" id="filePick" accept=".wbv,.dat,application/zip" hidden>
