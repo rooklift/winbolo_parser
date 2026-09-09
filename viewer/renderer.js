@@ -186,6 +186,10 @@ let coordinate_pixel_el = document.getElementById("coordinatePixel");
 let drop_hint = document.getElementById("dropHint");
 let drop_hint_text = document.getElementById("dropHintText");
 let drop_hint_link = document.getElementById("dropHintLink");
+let drop_hint_keys = document.getElementById("dropHintKeys");
+let help_btn = document.getElementById("helpBtn");
+let shortcut_sheet_el = document.getElementById("shortcutSheet");
+let shortcut_groups_el = document.getElementById("shortcutGroups");
 let map_name_el = document.getElementById("mapName");
 let game_meta_el = document.getElementById("gameMeta");
 let version_meta_el = document.getElementById("versionMeta");
@@ -216,6 +220,9 @@ drop_hint_text.textContent = WEB
  * open the file picker. */
 drop_hint_link.hidden = !WEB;
 drop_hint_link.querySelector("a").addEventListener("click", e => e.stopPropagation());
+
+/* The keys are advertised only where there's no menu to find them in. */
+drop_hint_keys.hidden = !WEB;
 
 /* Toggle shortcuts: Cmd/Ctrl+key in Electron (mirroring the menu's
  * accelerators), the bare key on the web. */
@@ -1299,7 +1306,136 @@ function save_map() {
 /* F1-F8 speeds: the classic doubling ladder, whatever the menu offers. */
 const FKEY_SPEEDS = [0.5, 1, 2, 4, 8, 16, 32, 64];
 
+/* ---------- shortcut sheet ---------- */
+
+/* The apps write their keys in their menus. The web page has no menu, so
+ * this sheet is the only place its keys are written down -- and it also
+ * covers the F-key speeds, the arrow-key seek and the mouse gestures,
+ * which no menu lists either. Built on the web alone, from one table:
+ * whatever the sheet prints is what the handler below listens for. */
+
+const MAC = /Mac/.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "");
+
+/* Cmd and Ctrl are interchangeable to the handler; print the one the
+ * keyboard in front of the reader actually has. */
+function cmd_key(key) {
+	return MAC ? "\u2318" + key : "Ctrl " + key;
+}
+
+/* Each row's keys become key caps, except "/" and "..." which separate
+ * them; via is printed in words instead, for the mouse. The toggles are
+ * bare keys here because TOGGLE_CTRL is false on the web -- the browser
+ * owns Ctrl+D, Ctrl+T, Ctrl+P and friends. */
+const SHORTCUT_GROUPS = [
+	{ name: "Playback", rows: [
+		{ what: "Play / pause", keys: ["Space"] },
+		{ what: "Speed 0.5\u00d7 to 64\u00d7", keys: ["F1", "\u2026", "F8"] },
+		{ what: "Previous / next change", keys: ["\u2191", "/", "\u2193"] },
+		{ what: "Back / forward 10s", keys: ["\u2190", "/", "\u2192"] },
+		{ what: "Back / forward 60s", keys: ["Shift \u2190", "/", "Shift \u2192"] },
+		{ what: "Beginning / end", keys: ["Home", "/", "End"] },
+	] },
+	{ name: "View", rows: [
+		{ what: "Zoom out / in", keys: [cmd_key("-"), "/", cmd_key("=")] },
+		{ what: "Centre map", keys: [cmd_key("0")] },
+		{ what: "Player lock", keys: ["L"] },
+		{ what: "Simple graphics", keys: ["G"] },
+		{ what: "Simple terrain", keys: ["T"] },
+		{ what: "Simple LGM", keys: ["M"] },
+		{ what: "Big shots", keys: ["B"] },
+		{ what: "Neutral pill colour", keys: ["N"] },
+	] },
+	{ name: "Message wire", rows: [
+		{ what: "Event messages", keys: ["E"] },
+		{ what: "Pre-game messages", keys: ["P"] },
+	] },
+	{ name: "Debug", rows: [
+		{ what: "Coordinates", keys: ["D"] },
+		{ what: "Pillbox IDs", keys: ["I"] },
+	] },
+	{ name: "File", rows: [
+		{ what: "Open replay", keys: [cmd_key("O")] },
+		{ what: "Save initial map", keys: [cmd_key("S")] },
+	] },
+	{ name: "Mouse", rows: [
+		{ what: "Pan the map", via: "drag" },
+		{ what: "Zoom to the pointer", via: "wheel" },
+	] },
+];
+
+const SEPARATORS = ["/", "\u2026"];
+
+function build_shortcut_sheet() {
+	let html = "";
+	for (let group of SHORTCUT_GROUPS) {
+		html += `<div class="shortcutGroup"><h2>${esc(group.name)}</h2>`;
+		for (let row of group.rows) {
+			let keys = "";
+			for (let key of row.keys || []) {
+				keys += SEPARATORS.includes(key)
+					? `<span class="sep">${esc(key)}</span>`
+					: `<kbd>${esc(key)}</kbd>`;
+			}
+			html += `<div class="shortcutRow"><span class="what">${esc(row.what)}</span>` +
+				(keys ? `<span class="keys">${keys}</span>` : "") +
+				(row.via ? `<span class="via">${esc(row.via)}</span>` : "") +
+				`</div>`;
+		}
+		html += `</div>`;
+	}
+	shortcut_groups_el.innerHTML = html;
+}
+
+let shortcut_sheet_open = false;
+
+function set_shortcut_sheet(open) {
+	shortcut_sheet_open = open;
+	shortcut_sheet_el.classList.toggle("hidden", !open);
+	help_btn.setAttribute("aria-expanded", String(open));
+}
+
+/* Held down, these leave the sheet up: only a key that means something
+ * dismisses it. */
+const MODIFIER_KEYS = ["Shift", "Control", "Alt", "Meta", "CapsLock"];
+
+if (WEB) {
+	build_shortcut_sheet();
+	help_btn.hidden = false;
+	help_btn.addEventListener("click", () => set_shortcut_sheet(!shortcut_sheet_open));
+	/* while it's open the scrim covers the page, so this catches every
+	 * click, the one that lands back on the button included. On click
+	 * rather than pointerdown: closing any earlier would drop the scrim
+	 * out from under the release, and the drop hint below it opens the
+	 * file picker when clicked. */
+	shortcut_sheet_el.addEventListener("click", () => set_shortcut_sheet(false));
+	/* the start screen's own line opens the sheet rather than a replay:
+	 * the whole hint around it is the open button, so the click stops here */
+	drop_hint_keys.addEventListener("click", e => {
+		e.stopPropagation();
+		set_shortcut_sheet(true);
+	});
+}
+
 window.addEventListener("keydown", e => {
+	/* ? opens and closes the sheet, and Escape closes it. Any other
+	 * shortcut closes it on the way through rather than being swallowed:
+	 * a key pressed to find out what it does still does it, with the
+	 * canvas already uncovered when the change lands. */
+	if (WEB && e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+		e.preventDefault();
+		/* held down, it toggles once: the repeats are swallowed here
+		 * rather than falling through to the dismissal below */
+		if (!e.repeat) set_shortcut_sheet(!shortcut_sheet_open);
+		return;
+	}
+	if (shortcut_sheet_open) {
+		if (e.code === "Escape") {
+			e.preventDefault();
+			set_shortcut_sheet(false);
+			return;
+		}
+		if (!MODIFIER_KEYS.includes(e.key)) set_shortcut_sheet(false);
+	}
 	if (e.code === "Escape" && window.api) {
 		e.preventDefault();
 		window.api.exit_fullscreen();

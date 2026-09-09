@@ -66,7 +66,9 @@ friendly. It runs three ways from the same files.
 **As a web page:** open `viewer/index.html` in a browser, or serve the
 `viewer/` directory with any static file server. Drop a `.wbv` on it, or
 click to choose one. Toggle shortcuts on the web are bare keys (D, I, G,
-M, B, N, T, E, P, L) rather than Ctrl+key.
+M, B, N, T, E, P, L) rather than Ctrl+key. Since there is no menu to read
+the keys off, the web version alone gets a shortcut sheet: press `?`, or
+use the `?` button at the end of the transport bar.
 
 **As an [Electron](https://www.electronjs.org/) app:**
 
