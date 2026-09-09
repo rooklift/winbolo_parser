@@ -1191,9 +1191,9 @@ async function load_log(bytes, name) {
 	version_meta_el.textContent = `WinBolo ${h.bolo_version} · log v${h.version}`;
 	game_type_meta_el.textContent = [
 		WinBoloLog.GAME_TYPES[h.game_type] || `game type ${h.game_type}`,
-		h.created ? "Server started " + new Date(h.created * 1000).toISOString().slice(0, 10) : "",
+		h.created ? "server started " + new Date(h.created * 1000).toISOString().slice(0, 10) : "",
 	].filter(Boolean).join(" · ");
-	game_type_meta_el.title = h.created ? "by the server's own clock; the server may have run earlier games since" : "";
+	game_type_meta_el.title = h.created ? "by the server's own clock; the server may have run many games since" : "";
 	for (let w of game.log.warnings) console.warn("replay:", w);
 
 	rebuild_chat(clock);
