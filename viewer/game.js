@@ -277,6 +277,12 @@ function state_from_snapshot(s, previous) {
 	return st;
 }
 
+/* The parts of each player slot that outlive the player: what the sidebar
+ * shows for a slot after its player has left. */
+function player_labels(s) {
+	return s.players.map(p => ({ name: p.name, location: p.location, quit: p.quit }));
+}
+
 function clone_state(s) {
 	return {
 		tick: s.tick, grid: s.grid.slice(), grid_version: s.grid_version,
@@ -568,18 +574,26 @@ function* build_steps(log) {
 	let tick_events = [];
 	let current_tick = -1;
 	let snaps = log.snapshots;
-	let state = snaps.length && snaps[0].tick === 0 ? state_from_snapshot(snaps[0], null) : initial_state();
-	let next_snap = snaps.length && snaps[0].tick === 0 ? 1 : 0;
+	/* the labels (name, country, quit) of every slot as of each snapshot,
+	 * carried through the snapshots that lack them; a seek back to a
+	 * snapshot restores them, since a snapshot alone has no name for a
+	 * slot whose player has left */
+	let snapshot_labels = [];
+	let state = initial_state();
+	let next_snap = 0;
+	let adopt = () => {
+		state = state_from_snapshot(snaps[next_snap], state);
+		snapshot_labels.push(player_labels(state));
+		next_snap++;
+	};
+	if (snaps.length && snaps[0].tick === 0) adopt();
 	let events = log.events;
 	let step = Math.max(1, events.length >> 7);
 	for (let i = 0; i < events.length; i++) {
 		let e = events[i];
 		/* a snapshot between events resets nothing the events would not,
 		 * but it is the truth: adopt it, keeping the names it lacks */
-		while (next_snap < snaps.length && snaps[next_snap].event_index <= i) {
-			state = state_from_snapshot(snaps[next_snap], state);
-			next_snap++;
-		}
+		while (next_snap < snaps.length && snaps[next_snap].event_index <= i) adopt();
 		if (e.tick !== current_tick) {
 			if (current_tick >= 0) track_tick(tracker, current_tick, tick_events, state, effects, fall_segments);
 			tick_events = [];
@@ -590,15 +604,12 @@ function* build_steps(log) {
 		if (i % step === 0) yield i / events.length;
 	}
 	if (current_tick >= 0) track_tick(tracker, current_tick, tick_events, state, effects, fall_segments);
-	while (next_snap < snaps.length) {
-		state = state_from_snapshot(snaps[next_snap], state);
-		next_snap++;
-	}
+	while (next_snap < snaps.length) adopt();
 	let start = game_start_tick(log);
 	let marker = lobby_exit_tick(log);
 	if (marker < 0) marker = start;
 	let game = {
-		log, header: log.header, events, snapshots: snaps,
+		log, header: log.header, events, snapshots: snaps, snapshot_labels,
 		/* the lobby before the game is not part of the replay: the clock,
 		 * the seek bar and the effects all begin at the start. The wire
 		 * keeps the lobby's lines, at negative times, so the chat before
@@ -696,9 +707,10 @@ function event_lower_bound(events, tick) {
 
 /* State at a tick: the nearest snapshot at or before it, replayed forward
  * through every event up to and including that tick. Returns the state
- * and the index of the first event not yet applied. Player names are
- * carried forward from the last snapshot that knew them: a rejoin that
- * happened between snapshots is replayed from the events anyway. */
+ * and the index of the first event not yet applied. The labels of slots
+ * the snapshot marks unused (a player who has left keeps a greyed name in
+ * the sidebar) are the ones the build pass carried to that snapshot, so
+ * the state matches what playing forward through the quit would show. */
 function state_at(game, tick) {
 	tick = Math.floor(tick);
 	let snaps = game.snapshots;
@@ -708,10 +720,8 @@ function state_at(game, tick) {
 		state = initial_state();
 		index = 0;
 	} else {
-		/* names of slots the snapshot marks unused come from the state
-		 * just before it, which the build pass did not keep; the
-		 * previous snapshot is the next best source */
-		state = state_from_snapshot(snaps[si], si > 0 ? state_from_snapshot(snaps[si - 1], null) : null);
+		let labels = game.snapshot_labels && game.snapshot_labels[si];
+		state = state_from_snapshot(snaps[si], labels ? { players: labels } : null);
 		index = snaps[si].event_index;
 	}
 	let events = game.events;

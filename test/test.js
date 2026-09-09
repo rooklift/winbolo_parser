@@ -278,6 +278,10 @@ async function test_synthetic() {
 	let later = WinBoloGame.state_at(game, 269).state;
 	check("state at 269: Bob gone", later.players[1].quit && !later.players[1].in_use);
 	check("state at 269: shells gone", later.shells.length === 0 && !later.players[0].lgm.out);
+	/* the snapshot at 569 has no name for Bob's slot; a seek back to
+	 * after it must still show him, greyed, as playing forward does */
+	let after_snap = WinBoloGame.state_at(game, 580).state.players[1];
+	check("a seek past a later snapshot keeps the departed player's name", after_snap.name === "Bob" && after_snap.quit && !after_snap.in_use, JSON.stringify(after_snap));
 	let early = WinBoloGame.state_at(game, 5).state;
 	check("state at 5: only Alice", early.players[0].in_use && !early.players[1].in_use && early.pills[0].armour === 15);
 	check("next change from 12", WinBoloGame.adjacent_change_tick(game, 12, 1) === 268);
