@@ -1,5 +1,11 @@
 # Base resource generation: Bolo and WinBolo
 
+**Controlled follow-up:** the [join/quit experiment](base-generation-experiment.md)
+confirms persistence across quits and rounds, while showing that a lobby-only
+visit does not necessarily add a timer. It narrows the lobby-history inference
+below; the maximum lobby population alone is not the rule.
+
+
 Measured 2026-09-11. Rates below are **per base, for each of shells, mines
 and base armour separately**, before the stock cap of 90 or any consumption.
 Time is game time at 50 parser ticks per second.
