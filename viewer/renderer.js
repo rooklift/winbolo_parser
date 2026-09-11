@@ -73,7 +73,7 @@ let pregame_messages_enabled = false;
 /* Event kinds worth seeing even with the event lines off: without them the
  * chat has people talking who never appear to arrive or leave. Unlike the
  * "game started" divider, these still obey the pre-game filter. */
-const ALWAYS_SHOWN_EVENTS = new Set(["join", "quit"]);
+const ALWAYS_SHOWN_EVENTS = new Set(["join", "rejoin", "quit"]);
 
 let obj_imgs = new Map();
 
