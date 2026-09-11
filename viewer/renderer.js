@@ -63,12 +63,18 @@ let use_simple_terrain = false;
 let use_neutral_pill_colour = true;
 let coordinate_debug_enabled = false;
 let pillbox_ids_enabled = false;
-/* The wire shows chat alone (and the "game started" divider) unless the
- * event lines (joins, deaths, alliances, votes, server notices) are
- * switched on. The lobby's lines, before the start, can be hidden too;
- * the divider stays either way. */
+/* The wire shows chat alone (plus the "game started" divider and the
+ * comings and goings of players) unless the event lines (deaths,
+ * alliances, votes, server notices) are switched on. The lobby's lines,
+ * before the start, can be hidden too; the divider stays either way. */
 let event_messages_enabled = false;
 let pregame_messages_enabled = false;
+
+/* Event kinds worth seeing even with the event lines off: without them the
+ * chat has people talking who never appear to arrive or leave. Unlike the
+ * "game started" divider, these still obey the pre-game filter. */
+const ALWAYS_SHOWN_EVENTS = new Set(["join", "quit"]);
+
 let obj_imgs = new Map();
 
 function load_obj_sprites() {
@@ -638,7 +644,7 @@ function update_chat(tick = clock) {
 		/* the "game started" line is the divider between the lobby's chat
 		 * and the game's, so it shows whatever else is hidden */
 		if (m.kind !== "game_start") {
-			if (!event_messages_enabled && m.kind !== "say") continue;
+			if (!event_messages_enabled && m.kind !== "say" && !ALWAYS_SHOWN_EVENTS.has(m.kind)) continue;
 			if (!pregame_messages_enabled && m.tick < game.t0) continue;
 		}
 		chat_el.insertAdjacentHTML("beforeend", chat_line(m));
