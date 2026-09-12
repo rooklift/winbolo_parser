@@ -1334,6 +1334,10 @@ function cmd_key(key) {
  * bare keys here because TOGGLE_CTRL is false on the web -- the browser
  * owns Ctrl+D, Ctrl+T, Ctrl+P and friends. */
 const SHORTCUT_GROUPS = [
+	{ name: "File", rows: [
+		{ what: "Open replay", keys: [cmd_key("O")] },
+		{ what: "Save initial map", keys: [cmd_key("S")] },
+	] },
 	{ name: "Playback", rows: [
 		{ what: "Play / pause", keys: ["Space"] },
 		{ what: "Speed 0.5\u00d7 to 64\u00d7", keys: ["F1", "\u2026", "F8"] },
@@ -1341,6 +1345,10 @@ const SHORTCUT_GROUPS = [
 		{ what: "Back / forward 10s", keys: ["\u2190", "/", "\u2192"] },
 		{ what: "Back / forward 60s", keys: ["Shift \u2190", "/", "Shift \u2192"] },
 		{ what: "Beginning / end", keys: ["Home", "/", "End"] },
+	] },
+	{ name: "Mouse", rows: [
+		{ what: "Pan the map", via: "drag" },
+		{ what: "Zoom to the pointer", via: "wheel" },
 	] },
 	{ name: "View", rows: [
 		{ what: "Zoom out / in", keys: [cmd_key("-"), "/", cmd_key("=")] },
@@ -1359,14 +1367,6 @@ const SHORTCUT_GROUPS = [
 	{ name: "Debug", rows: [
 		{ what: "Coordinates", keys: ["D"] },
 		{ what: "Pillbox IDs", keys: ["I"] },
-	] },
-	{ name: "File", rows: [
-		{ what: "Open replay", keys: [cmd_key("O")] },
-		{ what: "Save initial map", keys: [cmd_key("S")] },
-	] },
-	{ name: "Mouse", rows: [
-		{ what: "Pan the map", via: "drag" },
-		{ what: "Zoom to the pointer", via: "wheel" },
 	] },
 ];
 
