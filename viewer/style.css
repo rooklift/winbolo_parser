@@ -4,6 +4,11 @@
 
 html, body, #layout { height: 100%; }
 
+/* Tell the engine the page is dark, so the parts of a form control the
+ * page can't paint (the select's dropdown list, scrollbars) come out dark
+ * too. */
+html { color-scheme: dark; }
+
 body {
 	background: #10131a;
 	color: #cfd6e4;
@@ -91,18 +96,39 @@ body {
 }
 #transport button:hover { background: #2c3650; }
 #transport select {
-	background: #232b3d;
+	background-color: #232b3d;
 	border: 1px solid #33405c;
 	color: #cfd6e4;
 	border-radius: 4px;
 	height: 26px;
 }
 /* Player lock active: the player selector takes the viewer's friendly
- * green, in shades matched to the dark controls. */
+ * green, in shades matched to the dark controls. (background-color, not
+ * the shorthand: the shorthand would wipe the chevron below.) */
 #viewpoint.locked {
-	background: #1e3d27;
+	background-color: #1e3d27;
 	border-color: #418a54;
 	color: #b5efc2;
+}
+
+/* Chromium and WebView2 drop a select to a plain styleable box as soon
+ * as its border is set, but Safari keeps drawing the platform's popup
+ * button and ignores the colours above, leaving a white menu in the dark
+ * bar. Turn the native look off everywhere so every engine paints the
+ * same box, and draw the chevron ourselves: two half-transparent
+ * gradients meeting in a V, since the CSP's default-src 'self' blocks a
+ * data: image and img-src is not opened just for this. */
+#transport select {
+	appearance: none;
+	-webkit-appearance: none;
+	font: inherit;
+	padding: 0 22px 0 8px;
+	background-image:
+		linear-gradient(45deg, transparent 50%, currentColor 50%),
+		linear-gradient(135deg, currentColor 50%, transparent 50%);
+	background-position: calc(100% - 13px) calc(50% - 1px), calc(100% - 8px) calc(50% - 1px);
+	background-size: 5px 5px, 5px 5px;
+	background-repeat: no-repeat;
 }
 #seek { flex: 1; accent-color: #5b8def; }
 
