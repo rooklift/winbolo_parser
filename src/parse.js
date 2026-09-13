@@ -9,7 +9,7 @@
 
 const TICKS_PER_SECOND = 50; /* one log tick is one 20 ms server tick */
 const LOG_HEADER = "WBOLOMOV";
-const SUPPORTED_VERSION = 2;
+const SUPPORTED_VERSIONS = [2, 3];
 const MAP_SIZE = 256;
 const DEEP_SEA = 0xff;
 const NEUTRAL = 0xff;
@@ -225,14 +225,13 @@ function snapshot_grid(s) {
 
 /* Decoders for the payload of each known event type: the argument bytes
  * logAddEvent wrote, in its order, read back into named fields. */
-let log_version = SUPPORTED_VERSION; /* of the log being parsed: PlayerJoined's shape depends on it */
 const DECODERS = {
-	[EVENT.PlayerJoined]: (b, e) => {
+	[EVENT.PlayerJoined]: (b, e, log_version) => {
 		e.player = b[0];
 		if (log_version === 0) {
 			e.ip = [b[1], b[2], b[3], b[4]]; /* version 0 logged the player's address */
 		} else {
-			/* versions 1 and 2: a two-letter country code, account flags, a reserved byte */
+			/* versions 1 through 3: a two-letter country code, account flags, a reserved byte */
 			if (b[1] || b[2]) e.country = String.fromCharCode(b[1], b[2]);
 			e.account_flags = b[3];
 			e.wbn_account = (b[3] & ACCOUNT_WBN) !== 0;
@@ -270,7 +269,10 @@ const DECODERS = {
 	[EVENT.BaseSetOwner]: (b, e) => { e.base = b[0]; e.owner = b[1]; e.migrate = b[2] !== 0; },
 	[EVENT.BaseSetStock]: (b, e) => { e.base = b[0]; e.shells = b[1]; e.mines = b[2]; e.armour = b[3]; },
 	[EVENT.PillSetOwner]: (b, e) => { e.pill = b[0]; e.owner = b[1]; e.migrate = b[2] !== 0; },
-	[EVENT.PillSetHealth]: (b, e) => { e.pill = high(b[0]); e.armour = low(b[0]); },
+	[EVENT.PillSetHealth]: (b, e, log_version) => {
+		e.pill = log_version >= 3 ? b[0] : high(b[0]);
+		e.armour = log_version >= 3 ? b[1] : low(b[0]);
+	},
 	[EVENT.PillSetPlace]: (b, e) => { e.pill = b[0]; e.x = b[1]; e.y = b[2]; },
 	[EVENT.PillSetInTank]: (b, e) => { e.pill = high(b[0]); e.in_tank = low(b[0]) !== 0; },
 	[EVENT.SaveMap]: (b, e) => { e.player = b[0]; },
@@ -322,19 +324,20 @@ const MIN_PAYLOAD = {
 };
 for (let t = EVENT.SoundBuild; t <= EVENT.SoundManDie; t++) MIN_PAYLOAD[t] = 2;
 
-function decode_event(type, payload, tick, warnings) {
+function decode_event(type, payload, tick, warnings, log_version) {
 	let e = { tick, type, name: EVENT_NAMES[type] || `event_${type}` };
 	let decode = DECODERS[type];
 	if (!decode) {
 		e.raw = Array.from(payload); /* unknown to the public source; see FORMAT.md */
 		return e;
 	}
-	if (payload.length < MIN_PAYLOAD[type]) {
-		warnings.push(`tick ${tick}: ${e.name} payload is ${payload.length} bytes, expected at least ${MIN_PAYLOAD[type]}`);
+	let minimum = type === EVENT.PillSetHealth && log_version >= 3 ? 2 : MIN_PAYLOAD[type];
+	if (payload.length < minimum) {
+		warnings.push(`tick ${tick}: ${e.name} payload is ${payload.length} bytes, expected at least ${minimum}`);
 		e.raw = Array.from(payload);
 		return e;
 	}
-	decode(payload, e);
+	decode(payload, e, log_version);
 	return e;
 }
 
@@ -344,10 +347,9 @@ function decode_event(type, payload, tick, warnings) {
  * every so often (for a progress bar), and returns the parsed log. */
 function* parse_steps(bytes) {
 	let header = parse_header(bytes);
-	if (header.version !== SUPPORTED_VERSION) {
-		throw new Error(`WinBolo log version ${header.version} is not supported (only version ${SUPPORTED_VERSION})`);
+	if (!SUPPORTED_VERSIONS.includes(header.version)) {
+		throw new Error(`WinBolo log version ${header.version} is not supported (supported versions: ${SUPPORTED_VERSIONS.join(", ")})`);
 	}
-	log_version = header.version;
 	let events = [];
 	let snapshots = [];
 	let warnings = [];
@@ -411,7 +413,7 @@ function* parse_steps(bytes) {
 					p = bytes.length;
 					break;
 				}
-				events.push(decode_event(type, bytes.subarray(p + 3, p + 3 + len), tick, warnings));
+				events.push(decode_event(type, bytes.subarray(p + 3, p + 3 + len), tick, warnings, header.version));
 				p += 3 + len;
 			}
 			tick++;

@@ -316,6 +316,49 @@ async function test_synthetic() {
 	check("version 0 is refused", true);
 }
 
+function test_log_versions() {
+	let original = synthetic_log();
+	let header = original.slice(0, WinBoloLog.parse_header(original).offset);
+	let fixture = (version, payload) => {
+		let bytes = Uint8Array.from([...header, ...snapshot(), ...block([event(28, payload), event(2, [7])]), 0, 0]);
+		bytes[8] = version;
+		return bytes;
+	};
+	for (let version of [2, 3]) {
+		let armour = version === 2 ? 12 : 100;
+		let payload = version === 2 ? [0x5c] : [5, armour];
+		let log = WinBoloLog.parse_log(fixture(version, payload));
+		assert.strictEqual(log.header.version, version);
+		assert.strictEqual(log.events[0].pill, 5);
+		assert.strictEqual(log.events[0].armour, armour);
+		assert.strictEqual(log.events[1].name, "PlayerQuit");
+		assert.strictEqual(log.events[1].player, 7);
+		assert.ok(log.finished && log.warnings.length === 0);
+		check("version " + version + " pill health and following event decode", true);
+	}
+	let short = WinBoloLog.parse_log(fixture(3, [5]));
+	assert.match(short.warnings[0], /PillSetHealth payload is 1 bytes, expected at least 2/);
+	assert.deepStrictEqual(short.events[0].raw, [5]);
+	assert.strictEqual(short.events[0].armour, undefined);
+	assert.strictEqual(short.events[1].player, 7);
+	check("short v3 pill health warns without losing the next event", true);
+	for (let version of [0, 1, 4]) {
+		assert.throws(() => WinBoloLog.parse_log(fixture(version, [])), /not supported/);
+	}
+	check("unsupported log versions are refused", true);
+	/* Progress generators may be advanced together by separate viewers. */
+	let v2 = WinBoloLog.parse_steps(fixture(2, [0x5c]));
+	let v3 = WinBoloLog.parse_steps(fixture(3, [5, 100]));
+	let a = v2.next(), b = v3.next();
+	while (!a.done || !b.done) {
+		if (!a.done) a = v2.next();
+		if (!b.done) b = v3.next();
+	}
+	assert.strictEqual(a.value.events[0].armour, 12);
+	assert.strictEqual(b.value.events[0].armour, 100);
+	check("interleaved v2 and v3 parsing keeps each file's version", true);
+}
+
 function test_viewer_build() {
 	let committed = fs.readFileSync(path.join(root, "viewer", "logparse.js"), "utf8").replace(/\r\n/g, "\n");
 	check("viewer/logparse.js is up to date (node tools/build-viewer-parser.js)", committed === build());
@@ -338,6 +381,7 @@ async function test_sample() {
 
 (async () => {
 	await test_synthetic();
+	test_log_versions();
 	test_viewer_build();
 	await test_sample();
 	console.log(failures ? `${failures} FAILED` : "all passed");
