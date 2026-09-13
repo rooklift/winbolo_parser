@@ -63,6 +63,7 @@ let use_simple_terrain = false;
 let use_neutral_pill_colour = true;
 let coordinate_debug_enabled = false;
 let pillbox_ids_enabled = false;
+let base_stocks_enabled = false;
 /* The wire shows chat alone (plus the "game started" divider and the
  * comings and goings of players) unless the event lines (deaths,
  * alliances, votes, server notices) are switched on. The lobby's lines,
@@ -711,6 +712,7 @@ function draw() {
 	draw_men(false);
 	draw_tanks();
 	draw_men(true);
+	draw_base_stock_labels();
 	update_coordinate_debug();
 }
 
@@ -723,6 +725,15 @@ function side_color(player) {
 function item_side(item, good) {
 	if (item.owner === NEUTRAL) return "evil";
 	return WinBoloGame.team_of(cur, item.owner) === good ? "good" : "evil";
+}
+
+function draw_base_stock_labels() {
+	if (!base_stocks_enabled) return;
+	let z = view.zoom;
+	for (let b of cur.bases) {
+		draw_object_label(`${b.shells}/${b.mines}/${b.armour}`,
+			tile_to_screen_x(b.x) + z / 2, tile_to_screen_y(b.y) + z / 2, z / 2);
+	}
 }
 
 function draw_bases() {
@@ -1229,6 +1240,7 @@ function toggle_simple_terrain() { use_simple_terrain = !use_simple_terrain; req
 function toggle_neutral_pill_colour() { use_neutral_pill_colour = !use_neutral_pill_colour; request_draw(); }
 function toggle_coordinate_debug() { coordinate_debug_enabled = !coordinate_debug_enabled; update_coordinate_debug(); }
 function toggle_pillbox_ids() { pillbox_ids_enabled = !pillbox_ids_enabled; request_draw(); }
+function toggle_base_stocks() { base_stocks_enabled = !base_stocks_enabled; request_draw(); }
 function toggle_event_messages() {
 	event_messages_enabled = !event_messages_enabled;
 	if (game) rebuild_chat(clock);
@@ -1367,6 +1379,7 @@ const SHORTCUT_GROUPS = [
 	{ name: "Debug", rows: [
 		{ what: "Coordinates", keys: ["D"] },
 		{ what: "Pillbox IDs", keys: ["I"] },
+		{ what: "Base stocks (shells / mines / armour)", keys: ["U"] },
 	] },
 ];
 
@@ -1461,6 +1474,11 @@ window.addEventListener("keydown", e => {
 	if (toggle_key(e, "KeyD")) {
 		e.preventDefault();
 		toggle_coordinate_debug();
+		return;
+	}
+	if (toggle_key(e, "KeyU") && !e.shiftKey) {
+		e.preventDefault();
+		toggle_base_stocks();
 		return;
 	}
 	if (toggle_key(e, "KeyI") && !e.shiftKey) {
@@ -1653,6 +1671,7 @@ if (window.api) {
 			case "toggle-pregame-messages": toggle_pregame_messages(); break;
 			case "toggle-coordinate-debug": toggle_coordinate_debug(); break;
 			case "toggle-pillbox-ids": toggle_pillbox_ids(); break;
+			case "toggle-base-stocks": toggle_base_stocks(); break;
 			case "save-map": save_map(); break;
 		}
 	});

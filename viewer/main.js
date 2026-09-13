@@ -116,6 +116,7 @@ function build_menu() {
 			submenu: [
 				{ label: "Toggle debug coordinates", accelerator: "CmdOrCtrl+D", click: () => send("toggle-coordinate-debug") },
 				{ label: "Toggle pillbox IDs", accelerator: "CmdOrCtrl+I", click: () => send("toggle-pillbox-ids") },
+				{ label: "Toggle base stocks", accelerator: "CmdOrCtrl+U", click: () => send("toggle-base-stocks") },
 				{ type: "separator" },
 				{ label: "Dev tools", role: "toggleDevTools" },
 			]

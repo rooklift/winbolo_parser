@@ -424,6 +424,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 	let debug = Submenu::with_items(app, "&Debug", true, &[
 		&item(app, "toggle-coordinate-debug", "Toggle debug coordinates", "Ctrl+D")?,
 		&item(app, "toggle-pillbox-ids", "Toggle pillbox IDs", "Ctrl+I")?,
+		&item(app, "toggle-base-stocks", "Toggle base stocks (shells / mines / armour)", "Ctrl+U")?,
 		&PredefinedMenuItem::separator(app)?,
 		&item(app, "devtools", "Dev tools", "")?,
 	])?;
