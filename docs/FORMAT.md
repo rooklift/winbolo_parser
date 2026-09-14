@@ -152,6 +152,30 @@ with no track leading in are mine explosions and landing tank wreckage,
 which use the same frames. Both explosion sites in `shells.c` write the
 same frames, so nothing in the burst itself says.
 
+Base captures from another player empty all three stocks immediately;
+neutral captures, neutralisation and migration preserve them. The viewer
+applies this on `BaseSetOwner`, since captures need not also write
+`BaseSetStock`. A scripted transfer's separate `keepStock` setting is not
+encoded in that owner event.
+
+Base shell damage likewise has no stock event in the standard recorder.
+The viewer estimates it from a tracked shell ending in a new, tile-aligned
+explosion on a base: five armour per enemy tank shell while armour exceeds
+four. It counts overlapping explosions separately and ignores their later
+animation frames. For point-blank hits, the first flight record can share
+the impact tick: a unique matching new shell that does not continue next
+tick also counts. Without a flight record, the viewer uses a unique nearby
+tank whose first shell collision position, allowing for logged position and
+heading rounding, falls inside the base square. A shoot sound at the tank's
+square can resolve competing tank candidates. This fallback avoids nearby
+mine blasts, recent tank deaths, pillbox muzzles and reusing one shot for
+multiple impacts; it remains an inference, not proof that the tank fired.
+
+Neutral, own and allied bases are exempt, as are pillbox and unresolved
+shooters. These are the standard game rules; custom damage rules and
+ambiguous hits cannot be reconstructed reliably this way. Explicit stock
+events and snapshots supply authoritative values when available.
+
 A shell's life is fixed when it is fired, and shows in its age at a fall:
 a tank shell lives 4 × gunsight − 5 logged ticks, the gunsight being 2 to
 14 half-tiles (so 3 ticks at the shortest setting, 51 at the longest, in

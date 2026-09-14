@@ -316,6 +316,123 @@ async function test_synthetic() {
 	check("version 0 is refused", true);
 }
 
+function test_base_stocks() {
+	let EV = WinBoloLog.EVENT;
+	let initial = WinBoloLog.parse_log(synthetic_log()).snapshots[0];
+	let stocks = b => [b.shells, b.mines, b.armour].join(",");
+	for (let [label, owner, next_owner, migrate, expected] of [
+		["stolen base empties immediately", 0, 1, false, "0,0,0"],
+		["neutral capture keeps stock", 255, 1, false, "90,90,90"],
+		["migration keeps stock", 0, 1, true, "90,90,90"],
+		["neutralisation keeps stock", 0, 255, false, "90,90,90"],
+		["unchanged owner keeps stock", 0, 0, false, "90,90,90"],
+	]) {
+		let state = WinBoloGame.state_from_snapshot(initial);
+		state.bases[0].owner = owner;
+		WinBoloGame.apply_event(state, { tick: 1, type: EV.BaseSetOwner, base: 0, owner: next_owner, migrate });
+		check(label, stocks(state.bases[0]) === expected && state.bases[0].owner === next_owner);
+	}
+	let make_log = (owner = 1, armour = 90, allied = false) => {
+		let snap = structuredClone(initial);
+		snap.bases[0].owner = owner;
+		snap.bases[0].armour = armour;
+		snap.players[0].tank.mx = 101;
+		snap.players[0].allies = allied ? [1] : [];
+		let flight = tick => ({ tick, type: EV.Shell, mx: 102, my: 100, px: 0, py: 8, dir: 4 });
+		let burst = (tick, explosion) => ({ tick, type: EV.Shell, mx: 102, my: 100, px: 0, py: 0, explosion });
+		return { header: {}, snapshots: [snap], ticks: 6, events: [
+			flight(1), burst(2, 8), burst(3, 8), burst(4, 7),
+			flight(5), burst(5, 7), burst(6, 6), burst(6, 7),
+		] };
+	};
+	let log = make_log(), game = WinBoloGame.build(log);
+	check("base loses five armour on a tracked shot", stocks(WinBoloGame.state_at(game, 2).state.bases[0]) === "90,90,85");
+	check("base explosion animation does not repeat damage", WinBoloGame.state_at(game, 5).state.bases[0].armour === 85);
+	check("overlapping base explosions each damage once", game.final.bases[0].armour === 80);
+	let playback = WinBoloGame.state_at(game, 1);
+	WinBoloGame.advance(game, playback.state, playback.index, 6);
+	check("base damage agrees when seeking and playing forward", playback.state.bases[0].armour === 80 && WinBoloGame.state_at(game, 6).state.bases[0].armour === 80);
+	check("rebuilding does not double base damage", WinBoloGame.build(log).final.bases[0].armour === 80);
+	for (let [label, owner, armour, allied, expected] of [
+		["neutral base", 255, 90, false, 90],
+		["own base", 0, 90, false, 90],
+		["allied base", 1, 90, true, 90],
+		["depleted base", 1, 4, false, 4],
+		["last armour", 1, 5, false, 0],
+	]) {
+		check(`${label} respects base hit rules`, WinBoloGame.build(make_log(owner, armour, allied)).final.bases[0].armour === expected);
+	}
+	let authoritative = make_log();
+	authoritative.events.push({ tick: 6, type: EV.BaseSetStock, base: 0, shells: 30, mines: 20, armour: 42 });
+	let corrected = WinBoloGame.build(authoritative);
+	check("recorded stocks override inferred damage", stocks(corrected.final.bases[0]) === "30,20,42" && stocks(WinBoloGame.state_at(corrected, 6).state.bases[0]) === "30,20,42");
+	let simultaneous = make_log();
+	simultaneous.events = simultaneous.events.slice(0, 2).flatMap(e => [e, { ...e }]);
+	check("simultaneous shots each damage the base", WinBoloGame.build(simultaneous).final.bases[0].armour === 80);
+	let unknown = make_log();
+	unknown.snapshots[0].players[0].in_use = false;
+	check("unidentified shooters do not invent base damage", WinBoloGame.build(unknown).final.bases[0].armour === 90);
+	let boundary = make_log();
+	let snap = structuredClone(boundary.snapshots[0]);
+	snap.tick = 7; snap.event_index = boundary.events.length;
+	snap.bases[0].armour = 37;
+	boundary.snapshots.push(snap);
+	boundary.events.push({ tick: 7, type: EV.BaseSetOwner, base: 0, owner: 1, migrate: false });
+	boundary.ticks = 7;
+	let reset = WinBoloGame.build(boundary);
+	check("snapshot after a shot replaces inferred stock", reset.final.bases[0].armour === 37 && WinBoloGame.state_at(reset, 7).state.bases[0].armour === 37);
+	let point_blank = (with_flight = false) => {
+		let log = make_log();
+		log.snapshots[0].players[0].tank.on_boat = false;
+		log.events = log.events.slice(with_flight ? 0 : 1, 4);
+		if (with_flight) log.events[0].tick = 2;
+		log.ticks = 4;
+		return log;
+	};
+	for (let with_flight of [false, true]) {
+		let log = point_blank(with_flight), game = WinBoloGame.build(log);
+		let before = WinBoloGame.state_at(game, 1);
+		WinBoloGame.advance(game, before.state, before.index, 4);
+		check(`point-blank hit ${with_flight ? "with same-tick flight" : "without flight"} damages once`,
+			game.final.bases[0].armour === 85 && before.state.bases[0].armour === 85 &&
+			WinBoloGame.state_at(game, 2).state.bases[0].armour === 85 && WinBoloGame.state_at(game, 3).state.bases[0].armour === 85);
+		check("point-blank reconstruction is repeatable", WinBoloGame.build(log).final.bases[0].armour === 85);
+	}
+	let passing = point_blank(true);
+	passing.events.splice(2, 0, { ...passing.events[0], tick: 3, px: 2 });
+	check("a continuing shell is not borrowed for a point-blank burst", WinBoloGame.build(passing).final.bases[0].armour === 90);
+	let repeated = point_blank();
+	repeated.events.push({ ...repeated.events[2], tick: 5 }, { ...repeated.events[2], tick: 6, explosion: 6 },
+		{ ...repeated.events[0], tick: 6 });
+	repeated.ticks = 6;
+	check("successive point-blank hits count through overlapping animations", WinBoloGame.build(repeated).final.bases[0].armour === 80);
+	let duplicate = point_blank(true);
+	duplicate.events.splice(2, 0, { ...duplicate.events[1] });
+	check("one point-blank shot cannot explain two bursts", WinBoloGame.build(duplicate).final.bases[0].armour === 85);
+	for (let [label, change] of [
+		["tank facing away", log => { log.snapshots[0].players[0].tank.frame = 12; }],
+		["distant tank", log => { log.snapshots[0].players[0].tank.mx = 99; }],
+		["friendly boat", log => { log.snapshots[0].bases[0].owner = 0; log.snapshots[0].players[0].tank.on_boat = true; }],
+		["allied boat", log => { log.snapshots[0].players[0].allies = [1]; log.snapshots[0].players[0].tank.on_boat = true; }],
+		["neutral base", log => { log.snapshots[0].bases[0].owner = 255; }],
+		["pill on base", log => { Object.assign(log.snapshots[0].pills[0], { x: 102, y: 100 }); }],
+		["nearby pill muzzle", log => { Object.assign(log.snapshots[0].pills[0], { x: 103, y: 100 }); }],
+		["nearby tank death", log => { log.events.unshift({ tick: 2, type: EV.PlayerDied, player: 0 }); }],
+		["nearby mine blast", log => { log.events.unshift({ tick: 2, type: EV.MapChange, x: 101, y: 100, terrain: 10 }, { tick: 2, type: EV.MapChange, x: 101, y: 100, terrain: 3 }); }],
+	]) {
+		let log = point_blank();
+		change(log);
+		check(`${label} does not invent point-blank damage`, WinBoloGame.build(log).final.bases[0].armour === 90);
+	}
+	let ambiguous = point_blank();
+	ambiguous.snapshots[0].players[2] = structuredClone(ambiguous.snapshots[0].players[0]);
+	ambiguous.snapshots[0].players[2].tank.my = 101;
+	ambiguous.snapshots[0].players[2].tank.frame = 2;
+	check("competing point-blank muzzles remain unresolved", WinBoloGame.build(ambiguous).final.bases[0].armour === 90);
+	ambiguous.events.unshift({ tick: 2, type: EV.SoundShoot, x: 101, y: 100 });
+	check("shoot sound resolves competing point-blank muzzles", WinBoloGame.build(ambiguous).final.bases[0].armour === 85);
+}
+
 function test_log_versions() {
 	let original = synthetic_log();
 	let header = original.slice(0, WinBoloLog.parse_header(original).offset);
@@ -381,6 +498,7 @@ async function test_sample() {
 
 (async () => {
 	await test_synthetic();
+	test_base_stocks();
 	test_log_versions();
 	test_viewer_build();
 	await test_sample();

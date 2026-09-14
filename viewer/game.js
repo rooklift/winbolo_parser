@@ -51,26 +51,96 @@ const CRATER = 3, MINE_START = 10;
 const MINE_KILL_TICKS = 30;              /* a mine blast this recent under a dying tank is what killed it (a chain takes ~10 ticks a square) */
 const SINK_TICKS = 4;                    /* a hit and the boat flag dropping this recently before a drowning: the boat was shot from under the tank */
 const TEAM_MESSAGE_TICKS = 25;           /* copies of one team message to its recipients arrive within this many ticks */
+const BASE_SHELL_DAMAGE = 5, BASE_MIN_HIT_ARMOUR = 4;
+const FIRST_SHELL_STEP = 6 * SHELL_STEP; /* five muzzle steps, then the first collision check */
+const POINT_BLANK_SLACK = 0.1;          /* logged positions and headings are quantised */
 
 function shell_tracker() {
-	return { tracks: [], ended: [], bursts: new Map() };
+	return { tracks: [], ended: [], bursts: new Map(), previous_bursts: [], burst_tick: -1 };
+}
+
+/* Match animation frames as a multiset: several shots can burst on the
+ * same base while earlier explosions are still animating there. */
+function fresh_bursts(tr, tick, bursts) {
+	let previous = tick === tr.burst_tick + 1 ? tr.previous_bursts.slice() : [];
+	let fresh = new Set();
+	for (let e of bursts.slice().sort((a, b) => a.explosion - b.explosion)) {
+		let i = previous.findIndex(p => burst_key(p) === burst_key(e) &&
+			(p.explosion === e.explosion || p.explosion === e.explosion + 1));
+		if (i >= 0) previous.splice(i, 1);
+		else if (e.explosion >= 7) fresh.add(e);
+	}
+	tr.previous_bursts = bursts;
+	tr.burst_tick = tick;
+	return fresh;
+}
+
+function damage_base(s, e) {
+	let b = s.bases[e.base_hit];
+	if (!b || !Number.isInteger(e.owner) || e.owner < 0 || e.owner >= MAX_TANKS ||
+		b.owner === NEUTRAL || b.owner === e.owner || s.players[e.owner].allies.includes(b.owner) ||
+		b.armour <= BASE_MIN_HIT_ARMOUR) return;
+	b.armour = Math.max(0, b.armour - BASE_SHELL_DAMAGE);
 }
 
 function burst_key(e) {
 	return (e.mx << 16) | (e.px << 12) | (e.my << 4) | e.py;
 }
 
+function in_base_square(x, y, b) {
+	return x >= b.x - POINT_BLANK_SLACK && x < b.x + 1 + POINT_BLANK_SLACK &&
+		y >= b.y - POINT_BLANK_SLACK && y < b.y + 1 + POINT_BLANK_SLACK;
+}
+
+/* A shell first recorded beside its own burst may already be dead. Do not
+ * borrow a live passing shell: check whether it carries on next tick. */
+function shell_continues(t, events, index, tick) {
+	let x = t.x + DIR_VECTORS[t.dir][0] * SHELL_STEP;
+	let y = t.y + DIR_VECTORS[t.dir][1] * SHELL_STEP;
+	for (let i = index; i < events.length && events[i].tick <= tick + 1; i++) {
+		let e = events[i];
+		if (e.type === EV.Shell && e.dir === t.dir &&
+			Math.hypot(world_x(e) - x, world_y(e) - y) <= TRACK_TOLERANCE) return true;
+	}
+	return false;
+}
+
+/* With no flight record, a unique nearby muzzle aimed into the base can
+ * explain a point-blank impact. Include friendly tanks as candidates too:
+ * a boat shot can burst harmlessly on its own base. */
+function point_blank_owner(state, b, tick, tick_events, fired) {
+	if (state.mine_blasts.some(m => tick - m.tick <= MINE_KILL_TICKS && Math.abs(m.x - b.x) <= 1 && Math.abs(m.y - b.y) <= 1) ||
+		state.players.some(p => tick - p.tank.died_at <= BURST_FRAME_TICKS &&
+			Math.hypot(world_x(p.tank) - b.x - 0.5, world_y(p.tank) - b.y - 0.5) <= 2)) return null;
+	let candidates = state.players.filter(p => {
+		let t = p.tank;
+		if (!t.in_world) return false;
+		let [hx, hy] = DIR_VECTORS[t.dir];
+		let x = world_x(t), y = world_y(t);
+		if (Math.floor(x) === b.x && Math.floor(y) === b.y) return false;
+		return in_base_square(x + hx * FIRST_SHELL_STEP, y + hy * FIRST_SHELL_STEP, b);
+	});
+	/* A nearby pillbox is another possible muzzle, with no logged heading. */
+	if (state.pills.some(p => !p.in_tank && p.armour > 0 &&
+		Math.hypot(p.x - b.x, p.y - b.y) <= FIRST_SHELL_STEP + Math.SQRT1_2)) return null;
+	let shooting = candidates.filter(p => tick_events.some(e => e.type === EV.SoundShoot && e.x === p.tank.mx && e.y === p.tank.my));
+	if (shooting.length) candidates = shooting;
+	if (candidates.length !== 1 || fired.has(candidates[0].slot)) return null;
+	return candidates[0].slot;
+}
+
 /* Process one tick's Shell events once the tick is complete: extend the
  * tracks, start new ones at muzzles, and explain the bursts. Marks the
  * events themselves (owner, age, cause) so the state and the renderer
  * see the verdicts. Falls add a splash effect and a fall segment. */
-function track_tick(tr, tick, tick_events, state, effects, fall_segments) {
+function track_tick(tr, tick, tick_events, state, effects, fall_segments, events, next_index) {
 	let flights = [], bursts = [];
 	for (let e of tick_events) {
 		if (e.type !== EV.Shell) continue;
 		if (e.dir !== undefined) flights.push(e);
 		else bursts.push(e);
 	}
+	let fresh = fresh_bursts(tr, tick, bursts);
 	if (!flights.length && !bursts.length && !tr.tracks.length) return;
 
 	/* extend tracks: each to the nearest shell at its predicted position */
@@ -126,11 +196,14 @@ function track_tick(tr, tick, tick_events, state, effects, fall_segments) {
 	}
 	tr.tracks = next;
 	tr.ended = tr.ended.filter(t => tick - t.last_tick <= TRACK_GRACE_TICKS);
+	let fired = new Set(next.filter(t => t.born === tick).map(t => t.owner));
 
 	for (let e of bursts) {
 		let key = burst_key(e);
+		let base = e.px === 0 && e.py === 0 ? state.bases.findIndex(b => b.x === e.mx && b.y === e.my) : -1;
 		let known = tr.bursts.get(key);
-		if (known && tick - known.tick <= BURST_FRAME_TICKS) {
+		if (base >= 0 && !fresh.has(e)) continue;
+		if (base < 0 && known && tick - known.tick <= BURST_FRAME_TICKS) {
 			e.cause = known.cause; e.owner = known.owner;
 			continue;
 		}
@@ -154,10 +227,34 @@ function track_tick(tr, tick, tick_events, state, effects, fall_segments) {
 			let score = across + Math.abs(along - expected) * 0.5;
 			if (score < best_score) { best_score = score; best = t; }
 		}
-		if (!best) continue; /* a mine going off, or tank wreckage landing */
+		if (!best && base >= 0 && !state.pills.some(p => !p.in_tank && p.x === e.mx && p.y === e.my)) {
+			let b = state.bases[base];
+			let same_tick = tr.tracks.filter(t => t.born === tick &&
+				in_base_square(t.x + DIR_VECTORS[t.dir][0] * SHELL_STEP, t.y + DIR_VECTORS[t.dir][1] * SHELL_STEP, b));
+			if (same_tick.length === 1 && !shell_continues(same_tick[0], events, next_index, tick)) {
+				best = same_tick[0];
+				tr.tracks = tr.tracks.filter(t => t !== best);
+			} else if (!same_tick.length) {
+				let owner = point_blank_owner(state, b, tick, tick_events, fired);
+				if (owner !== null) {
+					best = { owner, age: 0 };
+					fired.add(owner);
+				}
+			}
+		}
+		if (!best) continue; /* no unambiguous shell or point-blank muzzle */
+		fired.add(best.owner);
 		tr.ended = tr.ended.filter(t => t !== best);
 		let { cause, victim } = burst_cause(e, state, bx, by, best.owner);
 		e.cause = cause; e.owner = best.owner; e.age = best.age;
+		if (base >= 0 && !state.pills.some(p => !p.in_tank && p.x === e.mx && p.y === e.my)) {
+			e.base_hit = base;
+			/* Shells are logged after simulation. A later stock event in
+			 * this tick already contains the damage and takes precedence. */
+			let later_stock = tick_events.slice(tick_events.indexOf(e) + 1).some(next =>
+				next.type === EV.BaseSetStock && next.base === base);
+			if (!later_stock) damage_base(state, e);
+		}
 		if (victim !== undefined) {
 			/* remembered on the tank, for a drowning that follows */
 			let t = state.players[victim].tank;
@@ -415,6 +512,7 @@ function apply_event(s, e, effects, chat) {
 			break;
 		case EV.Shell:
 			s.shells.push(e);
+			if (e.base_hit !== undefined) damage_base(s, e);
 			break;
 		case EV.SoundShoot: case EV.SoundHitTank: case EV.SoundHitTree: case EV.SoundHitWall:
 		case EV.SoundMineExplode: case EV.SoundExplosion: case EV.SoundBigExplosion: case EV.SoundManDie:
@@ -457,9 +555,15 @@ function apply_event(s, e, effects, chat) {
 			unally(s, e.player);
 			push_chat("ally_leave");
 			break;
-		case EV.BaseSetOwner:
-			if (s.bases[e.base]) s.bases[e.base].owner = e.owner;
+		case EV.BaseSetOwner: {
+			let b = s.bases[e.base];
+			if (!b) break;
+			if (!e.migrate && e.owner !== NEUTRAL && b.owner !== NEUTRAL && b.owner !== e.owner) {
+				b.shells = 0; b.mines = 0; b.armour = 0;
+			}
+			b.owner = e.owner;
 			break;
+		}
 		case EV.BaseSetStock:
 			if (s.bases[e.base]) Object.assign(s.bases[e.base], { shells: e.shells, mines: e.mines, armour: e.armour });
 			break;
@@ -588,22 +692,25 @@ function* build_steps(log) {
 	};
 	if (snaps.length && snaps[0].tick === 0) adopt();
 	let events = log.events;
+	/* Tracking annotates Shell events; rebuilding the same log must not
+	 * apply a previous build's inferred damage before tracking it again. */
+	for (let e of events) delete e.base_hit;
 	let step = Math.max(1, events.length >> 7);
 	for (let i = 0; i < events.length; i++) {
 		let e = events[i];
 		/* a snapshot between events resets nothing the events would not,
 		 * but it is the truth: adopt it, keeping the names it lacks */
-		while (next_snap < snaps.length && snaps[next_snap].event_index <= i) adopt();
 		if (e.tick !== current_tick) {
-			if (current_tick >= 0) track_tick(tracker, current_tick, tick_events, state, effects, fall_segments);
+			if (current_tick >= 0) track_tick(tracker, current_tick, tick_events, state, effects, fall_segments, events, i);
 			tick_events = [];
 			current_tick = e.tick;
 		}
+		while (next_snap < snaps.length && snaps[next_snap].event_index <= i) adopt();
 		apply_event(state, e, effects, chat);
 		tick_events.push(e);
 		if (i % step === 0) yield i / events.length;
 	}
-	if (current_tick >= 0) track_tick(tracker, current_tick, tick_events, state, effects, fall_segments);
+	if (current_tick >= 0) track_tick(tracker, current_tick, tick_events, state, effects, fall_segments, events, events.length);
 	while (next_snap < snaps.length) adopt();
 	let start = game_start_tick(log);
 	let marker = lobby_exit_tick(log);
