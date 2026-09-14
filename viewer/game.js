@@ -457,9 +457,17 @@ function apply_event(s, e, effects, chat) {
 			unally(s, e.player);
 			push_chat("ally_leave");
 			break;
-		case EV.BaseSetOwner:
-			if (s.bases[e.base]) s.bases[e.base].owner = e.owner;
+		case EV.BaseSetOwner: {
+			let b = s.bases[e.base];
+			if (!b) break;
+			/* Stealing an owned base empties it without a separate stock
+			 * event. Neutral captures and migrations retain their stock. */
+			if (!e.migrate && e.owner !== NEUTRAL && b.owner !== NEUTRAL && b.owner !== e.owner) {
+				b.shells = 0; b.mines = 0; b.armour = 0;
+			}
+			b.owner = e.owner;
 			break;
+		}
 		case EV.BaseSetStock:
 			if (s.bases[e.base]) Object.assign(s.bases[e.base], { shells: e.shells, mines: e.mines, armour: e.armour });
 			break;

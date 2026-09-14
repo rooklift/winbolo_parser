@@ -316,6 +316,28 @@ async function test_synthetic() {
 	check("version 0 is refused", true);
 }
 
+function test_base_capture_stock() {
+	let initial = WinBoloLog.parse_log(synthetic_log()).snapshots[0];
+	for (let [label, owner, next_owner, migrate, expected] of [
+		["stolen base empties immediately", 0, 1, false, 0],
+		["neutral capture keeps stock", 255, 1, false, 90],
+		["migration keeps stock", 0, 1, true, 90],
+		["neutralisation keeps stock", 0, 255, false, 90],
+		["unchanged owner keeps stock", 0, 0, false, 90],
+	]) {
+		let snap = structuredClone(initial);
+		snap.bases[0].owner = owner;
+		let event = { tick: 1, type: WinBoloLog.EVENT.BaseSetOwner, base: 0, owner: next_owner, migrate };
+		let game = WinBoloGame.build({ header: {}, snapshots: [snap], events: [event], ticks: 1 });
+		let playback = WinBoloGame.state_at(game, 0);
+		WinBoloGame.advance(game, playback.state, playback.index, 1);
+		check(label, [game.final, playback.state, WinBoloGame.state_at(game, 1).state].every(state => {
+			let b = state.bases[0];
+			return b.owner === next_owner && b.shells === expected && b.mines === expected && b.armour === expected;
+		}));
+	}
+}
+
 function test_log_versions() {
 	let original = synthetic_log();
 	let header = original.slice(0, WinBoloLog.parse_header(original).offset);
@@ -381,6 +403,7 @@ async function test_sample() {
 
 (async () => {
 	await test_synthetic();
+	test_base_capture_stock();
 	test_log_versions();
 	test_viewer_build();
 	await test_sample();
