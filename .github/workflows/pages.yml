@@ -1,0 +1,47 @@
+name: Deploy viewer to GitHub Pages
+
+# Publishes the web version of the viewer (the viewer/ directory, served
+# as static files) at https://rooklift.github.io/winbolo_parser/.
+# Runs on every push to main that touches the viewer, or by hand from the
+# Actions tab.
+#
+# One-off setup: in the repository's Settings > Pages, the source must be
+# set to "GitHub Actions" (not "Deploy from a branch"), or the deploy step
+# fails. The site is served over HTTPS and is public.
+#
+# The whole viewer/ directory is uploaded as is. The Electron-only files in
+# it (main.js, preload.js, builder.py, the tauri/ folder) are harmless
+# there: index.html never loads them, so the browser never asks for them.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "viewer/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; a newer push cancels one still queued.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: viewer
+      - id: deployment
+        uses: actions/deploy-pages@v4

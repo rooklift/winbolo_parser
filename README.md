@@ -63,9 +63,11 @@ on.
 speeds up to 64×, and a viewpoint selector choosing whose side draws as
 friendly. It runs three ways from the same files.
 
-**As a web page:** open `viewer/index.html` in a browser, or serve the
-`viewer/` directory with any static file server. Drop a `.wbv` on it, or
-click to choose one. Toggle shortcuts on the web are bare keys (D, I, G,
+**As a web page:** hosted at
+[rooklift.github.io/winbolo_parser](https://rooklift.github.io/winbolo_parser/)
+(replays are parsed in the browser and never uploaded). Or open
+`viewer/index.html` locally, or serve the `viewer/` directory with any
+static file server. Drop a `.wbv` on it, or click to choose one. Toggle shortcuts on the web are bare keys (D, I, G,
 M, B, N, T, E, P, L) rather than Ctrl+key. Since there is no menu to read
 the keys off, the web version alone gets a shortcut sheet: press `?`, or
 use the `?` button at the end of the transport bar.
