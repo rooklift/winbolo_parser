@@ -16,6 +16,7 @@
 				"title": "WinBolo Replay Viewer",
 				"width": 1280,
 				"height": 860,
+				"center": true,
 				"backgroundColor": "#10131a",
 				"devtools": true
 			}
