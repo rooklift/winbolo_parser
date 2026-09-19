@@ -59,7 +59,7 @@ on.
 
 # WinBolo Replay Viewer
 
-`viewer/` plays replays back: gameplay, alliances, messages, seeking,
+`viewer/` plays replays back: gameplay, alliances, messages, sound, seeking,
 speeds up to 64×, and a viewpoint selector choosing whose side draws as
 friendly. It runs three ways from the same files.
 
@@ -68,7 +68,7 @@ friendly. It runs three ways from the same files.
 (replays are parsed in the browser and never uploaded). Or open
 `viewer/index.html` locally, or serve the `viewer/` directory with any
 static file server. Drop a `.wbv` on it, or click to choose one. Toggle shortcuts on the web are bare keys (D, I, G,
-M, B, N, T, E, P, L) rather than Ctrl+key. Since there is no menu to read
+M, B, N, T, E, P, L, A) rather than Ctrl+key. Since there is no menu to read
 the keys off, the web version alone gets a shortcut sheet: press `?`, or
 use the `?` button at the end of the transport bar.
 
@@ -99,6 +99,7 @@ build" workflow in the Actions tab builds any branch by hand.
 | ↑ ↓                  | previous / next change                          |
 | Home, End            | beginning, end                                  |
 | F1 to F8             | speed 0.5× to 64×                               |
+| A                    | game sounds (off until switched on; muted above 1×) |
 | wheel, Ctrl + - 0    | zoom at the cursor, zoom, centre the map        |
 | drag                 | pan                                             |
 | L                    | lock the view to the viewpoint player           |
@@ -133,13 +134,31 @@ decoded, and `attribution.trk` is read into named records, though the
 viewer draws nothing from it yet; an event type from a later WinBolo is
 skipped by its length.
 
+Sound is inferred. The format has Sound events, but no server writes
+them (the sample holds none), so the viewer works the sounds out from
+what the log does state, on the rules of WinBolo's own source: each
+shell the tracker traces to a muzzle is a shot, and each burst it
+explains is a hit on a tank, a pillbox, a building or a tree; the
+terrain changes are the builders farming and building, mines laid and
+going off, and a dead tank's wreckage landing (a block of craters is
+the big explosion, a lone one the small); a pillbox put down or repaired
+is building, a lost builder dies, a drowning sinks. The sounds are off
+until switched on (the speaker button on the transport bar, A on the web,
+Ctrl+A in the apps), mute above 1×, and are heard from the camera: near
+when on screen, far when off it, and a camera locked to a player hears
+that player's own gunfire and hits as the player would.
+
 ## Provenance and credits
 
 - **[WinBolo](https://github.com/milki/winbolo)** (**John Morrison**,
   1998-2008, GPL v2): the log format, the map codec, the terrain tile
   rules and the tile art; and his specification of the 2.03 replay
   format, which named the version 2 events and the attribution records.
-- **Stuart Cheshire**: Bolo itself, whose sprites the art descends from.
+- **Stuart Cheshire**: Bolo itself, whose sprites the art descends from,
+  and whose sound samples `viewer/sounds/` holds, as WinBolo's `sounds/`
+  ships them (lobby and ping sounds left out), in the 16-bit conversions
+  the Ancient Bolo viewer carries.
 - **[Ancient Bolo Parser](https://github.com/rooklift/ancient_bolo_parser)**:
-  the viewer's design, layout and controls, and its `format.js` and
-  `sprites.js`, which are ports of WinBolo's `bolo_map.c` and `screencalc.c`.
+  the viewer's design, layout and controls, its sound system, and its
+  `format.js` and `sprites.js`, which are ports of WinBolo's `bolo_map.c`
+  and `screencalc.c`.

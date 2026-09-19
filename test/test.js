@@ -123,12 +123,13 @@ function synthetic_log() {
 		...block([event(6, [101, 100, 0x40, 8])]),                               /* tick 530: the burst's second tick */
 		...block([event(6, [101, 100, 0x40, 7])]),                               /* tick 531: stage 7 */
 		/* ticks 532-538: another shell along the row, then a burst snapped to the
-		 * centre of square 102,100 as the forest there becomes grass: a terrain hit */
+		 * centre of square 102,100 as the road there becomes river (a boat's
+		 * shell washes a road away): a terrain hit */
 		...[2, 4, 6, 8, 10, 12, 14].flatMap(px => block([event(6, [101, 100, (px << 4) | 8, 9 + 4])])),
-		...block([event(6, [102, 100, 0x00, 8]), event(5, [102, 100, 7])]),      /* tick 539 */
+		...block([event(6, [102, 100, 0x00, 8]), event(5, [102, 100, 1])]),      /* tick 539 */
 		...block([event(33, [0, 0xff]), event(3, [0, 0, 0, 0, 0x40])]),          /* tick 540: a pillbox kills Alice; her tank is logged at 0,0 */
 		...block([event(3, [0, 100, 100, 0x88, 0x40])]),                          /* tick 541: Alice respawns */
-		...block([event(5, [100, 100, 12])]),                                    /* tick 542: a mine under her */
+		...block([event(5, [100, 100, 15])]),                                    /* tick 542: a mine under her, in the grass she sits on */
 		...block([event(5, [100, 100, 3])]),                                     /* tick 543: it goes off */
 		...block([event(3, [0, 0, 0, 0, 0x40])]),                                /* tick 544: her tank vanishes, no death logged */
 		...block([event(3, [0, 100, 100, 0x88, 0x40])]),                          /* tick 545: Alice respawns */
@@ -401,7 +402,10 @@ async function test_sample() {
 	}
 }
 
-(async () => {
+/* the synthetic log is shared with test-sound.js, which requires this file */
+module.exports = { synthetic_log, synthetic_attribution, make_zip };
+
+if (require.main === module) (async () => {
 	await test_synthetic();
 	test_base_capture_stock();
 	test_log_versions();

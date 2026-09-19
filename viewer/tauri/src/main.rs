@@ -402,6 +402,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 		&item(app, "next-change", "Next Change", "Down")?,
 		&item(app, "go-to-beginning", "Go to Beginning", "Home")?,
 		&item(app, "go-to-end", "Go to End", "End")?,
+		&PredefinedMenuItem::separator(app)?,
+		&item(app, "toggle-sound", "Toggle audio", "Ctrl+A")?,
 	])?;
 	let view = Submenu::with_items(app, "&View", true, &[
 		&item(app, "zoom-in", "Zoom in", "Ctrl+=")?,

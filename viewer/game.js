@@ -7,6 +7,9 @@
 const WinBoloLog = typeof module !== "undefined" && module.exports
 	? require("../src/parse.js") : window.WinBoloLog;
 
+const WinBoloSound = typeof module !== "undefined" && module.exports
+	? require("./sound.js") : window.WinBoloSound;
+
 const { MAP_SIZE, DEEP_SEA, NEUTRAL, MAX_TANKS, TICKS_PER_SECOND } = WinBoloLog;
 const EV = WinBoloLog.EVENT;
 
@@ -60,11 +63,23 @@ function burst_key(e) {
 	return (e.mx << 16) | (e.px << 12) | (e.my << 4) | e.py;
 }
 
+/* Process one tick once it is complete: the shells, then the sounds of
+ * whatever else changed (only during the build pass, when sounds is
+ * given). */
+function track_tick(tr, tick, tick_events, state, effects, fall_segments, sounds) {
+	/* for the sounds: the squares traced shells hit this tick, and the
+	 * squares something untraced burst on (wreckage, a mine, a boat run over) */
+	let hits = sounds ? { squares: new Set(), blasted: new Set() } : null;
+	track_shells(tr, tick, tick_events, state, effects, fall_segments, sounds, hits);
+	if (sounds) terrain_sounds(tick, tick_events, sounds, hits);
+}
+
 /* Process one tick's Shell events once the tick is complete: extend the
  * tracks, start new ones at muzzles, and explain the bursts. Marks the
  * events themselves (owner, age, cause) so the state and the renderer
- * see the verdicts. Falls add a splash effect and a fall segment. */
-function track_tick(tr, tick, tick_events, state, effects, fall_segments) {
+ * see the verdicts. Falls add a splash effect and a fall segment; a birth
+ * at a muzzle and an explained burst each add a sound. */
+function track_shells(tr, tick, tick_events, state, effects, fall_segments, sounds, hits) {
 	let flights = [], bursts = [];
 	for (let e of tick_events) {
 		if (e.type !== EV.Shell) continue;
@@ -106,11 +121,11 @@ function track_tick(tr, tick, tick_events, state, effects, fall_segments) {
 		let f = flights[j];
 		let x = world_x(f), y = world_y(f);
 		let [hx, hy] = DIR_VECTORS[f.dir];
-		let owner = null, best = MUZZLE_TOLERANCE;
+		let owner = null, best = MUZZLE_TOLERANCE, muzzle = null;
 		let consider = (mx, my, who) => {
 			let dx = x - mx, dy = y - my;
 			let d = Math.hypot(dx, dy);
-			if (d <= best && dx * hx + dy * hy >= -0.25) { best = d; owner = who; }
+			if (d <= best && dx * hx + dy * hy >= -0.25) { best = d; owner = who; muzzle = { x: mx, y: my }; }
 		};
 		for (let p of state.players) {
 			/* a tank that died this tick keeps its last position (see
@@ -123,6 +138,12 @@ function track_tick(tr, tick, tick_events, state, effects, fall_segments) {
 		}
 		f.owner = owner; f.age = 0;
 		next.push({ x, y, dir: f.dir, age: 0, owner, born: tick, last_tick: tick });
+		/* one gunshot per shell traced to a muzzle, at the muzzle; a shell
+		 * first seen away from every muzzle is a track lost and found again,
+		 * not a second shot */
+		if (sounds && owner !== null) {
+			WinBoloSound.push_sound(sounds, { tick, kind: "shooting", player: owner === PILL_OWNER ? null : owner, x: muzzle.x, y: muzzle.y });
+		}
 	}
 	tr.tracks = next;
 	tr.ended = tr.ended.filter(t => tick - t.last_tick <= TRACK_GRACE_TICKS);
@@ -154,7 +175,12 @@ function track_tick(tr, tick, tick_events, state, effects, fall_segments) {
 			let score = across + Math.abs(along - expected) * 0.5;
 			if (score < best_score) { best_score = score; best = t; }
 		}
-		if (!best) continue; /* a mine going off, or tank wreckage landing */
+		if (!best) {
+			/* a mine going off, tank wreckage flying or landing, a boat run
+			 * over: whichever, the square it is over is being blasted */
+			if (hits) hits.blasted.add(Math.floor(by) * MAP_SIZE + Math.floor(bx));
+			continue;
+		}
 		tr.ended = tr.ended.filter(t => t !== best);
 		let { cause, victim } = burst_cause(e, state, bx, by, best.owner);
 		e.cause = cause; e.owner = best.owner; e.age = best.age;
@@ -165,6 +191,18 @@ function track_tick(tr, tick, tick_events, state, effects, fall_segments) {
 			t.hit_by = best.owner;
 		}
 		tr.bursts.set(key, { tick, cause, owner: best.owner });
+		if (sounds) {
+			let sx = Math.floor(bx), sy = Math.floor(by);
+			let hit_terrain = state.grid[sy * MAP_SIZE + sx];
+			if (cause === "terrain") {
+				/* what was hit is what the square was before the hit changed it */
+				let change = tick_events.find(m => m.type === EV.MapChange && m.x === sx && m.y === sy && m.from !== undefined);
+				if (change) hit_terrain = change.from;
+				hits.squares.add(sy * MAP_SIZE + sx);
+			}
+			let kind = WinBoloSound.burst_sound(cause, hit_terrain);
+			if (kind) WinBoloSound.push_sound(sounds, { tick, kind, player: victim === undefined ? null : victim, x: bx, y: by });
+		}
 		if (cause === "fall") {
 			if (effects) effects.push({ tick, type: "splash", x: bx, y: by });
 			if (fall_segments) fall_segments.push({ start: best.last_tick, end: tick, from_x: best.x, from_y: best.y, to_x: bx, to_y: by, dir: best.dir, owner: best.owner });
@@ -173,6 +211,21 @@ function track_tick(tr, tick, tick_events, state, effects, fall_segments) {
 	if (tr.bursts.size > 64) {
 		for (let [key, b] of tr.bursts) if (tick - b.tick > BURST_FRAME_TICKS) tr.bursts.delete(key);
 	}
+}
+
+/* The sounds of the tick's terrain changes that no traced shell made:
+ * building, farming, mines laid and going off, wreckage landing. */
+function terrain_sounds(tick, tick_events, sounds, hits) {
+	let craters = [];
+	for (let e of tick_events) {
+		if (e.type !== EV.MapChange || e.from === undefined) continue;
+		let square = e.y * MAP_SIZE + e.x;
+		if (hits.squares.has(square)) continue;
+		let kind = WinBoloSound.terrain_sound(e.from, e.terrain, hits.blasted.has(square));
+		if (kind === "crater") craters.push({ x: e.x, y: e.y });
+		else if (kind) WinBoloSound.push_sound(sounds, { tick, kind, player: null, x: e.x + 0.5, y: e.y + 0.5 });
+	}
+	for (let sound of WinBoloSound.wreckage_sounds(tick, craters)) WinBoloSound.push_sound(sounds, sound);
 }
 
 /* What a burst hit. A collision with a square's contents (a pillbox,
@@ -340,9 +393,10 @@ function mine_under(s, t, tick) {
 function world_x(o) { return o.mx + o.px / 16; }
 function world_y(o) { return o.my + o.py / 16; }
 
-/* Apply one event. effects and chat, when given, collect the transient
- * visuals and the message wire (only during the build pass). */
-function apply_event(s, e, effects, chat) {
+/* Apply one event. effects, chat and sounds, when given, collect the
+ * transient visuals, the message wire and the sounds (only during the
+ * build pass; the sounds of the shells and the terrain are track_tick's). */
+function apply_event(s, e, effects, chat, sounds) {
 	if (e.tick !== s.tick) {
 		/* a new tick: last tick's restated objects are gone until restated */
 		s.tick = e.tick;
@@ -394,7 +448,12 @@ function apply_event(s, e, effects, chat) {
 				if (pl.tank.in_world && pl.tank.died_at !== e.tick && !pl.quit) {
 					pl.tank.died_at = e.tick;
 					if (effects) effects.push({ tick: e.tick, type: "tank_death", x: world_x(pl.tank), y: world_y(pl.tank) });
-					push_chat(mine_under(s, pl.tank, e.tick) ? "mine_kill" : "died");
+					let mined = mine_under(s, pl.tank, e.tick);
+					push_chat(mined ? "mine_kill" : "died");
+					/* the mine's blast has its own sound; a tank lost in deep water sank */
+					if (sounds && !mined && !pl.tank.on_boat && s.grid[pl.tank.my * MAP_SIZE + pl.tank.mx] === DEEP_SEA) {
+						WinBoloSound.push_sound(sounds, { tick: e.tick, kind: "tank_sinking", player: null, x: world_x(pl.tank), y: world_y(pl.tank) });
+					}
 				}
 				pl.tank.in_world = false;
 				pl.tank.last_seen = e.tick;
@@ -405,6 +464,9 @@ function apply_event(s, e, effects, chat) {
 			pl.lgm = { mx: e.mx, my: e.my, px: e.px, py: e.py, frame: e.frame, out: true, last_seen: e.tick };
 			break;
 		case EV.MapChange:
+			/* the sounds want what the square was; noted on the event, as the
+			 * tracker notes its verdicts, for the end of the tick */
+			if (sounds) e.from = s.grid[e.y * MAP_SIZE + e.x];
 			if (e.terrain === CRATER && s.grid[e.y * MAP_SIZE + e.x] >= MINE_START) {
 				/* a mine went off: remembered briefly, to tell a mine kill from a pillbox's */
 				s.mine_blasts.push({ tick: e.tick, x: e.x, y: e.y });
@@ -474,12 +536,27 @@ function apply_event(s, e, effects, chat) {
 		case EV.PillSetOwner:
 			if (s.pills[e.pill]) s.pills[e.pill].owner = e.owner;
 			break;
-		case EV.PillSetHealth:
-			if (s.pills[e.pill]) s.pills[e.pill].armour = e.armour;
+		case EV.PillSetHealth: {
+			let p = s.pills[e.pill];
+			if (!p) break;
+			/* armour going up is the builder's repair: a hit only takes it down */
+			if (sounds && !p.in_tank && e.armour > p.armour) {
+				WinBoloSound.push_sound(sounds, { tick: e.tick, kind: "man_building", player: null, x: p.x + 0.5, y: p.y + 0.5 });
+			}
+			p.armour = e.armour;
 			break;
-		case EV.PillSetPlace:
-			if (s.pills[e.pill]) { s.pills[e.pill].x = e.x; s.pills[e.pill].y = e.y; }
+		}
+		case EV.PillSetPlace: {
+			let p = s.pills[e.pill];
+			if (!p) break;
+			p.x = e.x; p.y = e.y;
+			/* a pill moves only when a builder puts it down; a dying tank's
+			 * pills land dead, at armour 0, and silently */
+			if (sounds && p.armour > 0) {
+				WinBoloSound.push_sound(sounds, { tick: e.tick, kind: "man_building", player: null, x: e.x + 0.5, y: e.y + 0.5 });
+			}
 			break;
+		}
 		case EV.PillSetInTank:
 			if (s.pills[e.pill]) s.pills[e.pill].in_tank = e.in_tank;
 			break;
@@ -524,7 +601,10 @@ function apply_event(s, e, effects, chat) {
 			if (!pl) break;
 			/* the man's last position is logged the tick before he dies (the
 			 * death is logged early in the tick, positions at its end) */
-			if (effects && e.tick - pl.lgm.last_seen <= 2) effects.push({ tick: e.tick, type: "lgm_death", x: world_x(pl.lgm), y: world_y(pl.lgm), player: e.player });
+			if (e.tick - pl.lgm.last_seen <= 2) {
+				if (effects) effects.push({ tick: e.tick, type: "lgm_death", x: world_x(pl.lgm), y: world_y(pl.lgm), player: e.player });
+				if (sounds) WinBoloSound.push_sound(sounds, { tick: e.tick, kind: "man_dying", player: null, x: world_x(pl.lgm), y: world_y(pl.lgm) });
+			}
 			pl.lgm.out = false;
 			push_chat("lost_man");
 			break;
@@ -544,6 +624,7 @@ function apply_event(s, e, effects, chat) {
 				 * in, or its boat was shot from under it (a hit on the tank
 				 * and the boat flag dropping, a tick or two before) */
 				let t = pl.tank;
+				if (sounds) WinBoloSound.push_sound(sounds, { tick: e.tick, kind: "tank_sinking", player: null, x: world_x(t), y: world_y(t) });
 				if (t.boat_lost_at !== undefined && e.tick - t.boat_lost_at <= SINK_TICKS && t.hit_at !== undefined && e.tick - t.hit_at <= SINK_TICKS) {
 					/* the shooter is null when the tracker could not place the
 					 * shell's muzzle; the line then names nobody */
@@ -577,6 +658,7 @@ function apply_event(s, e, effects, chat) {
 function* build_steps(log) {
 	let chat = [];
 	let effects = [];
+	let sounds = [];
 	let fall_segments = [];
 	let tracker = shell_tracker();
 	let tick_events = [];
@@ -603,15 +685,16 @@ function* build_steps(log) {
 		 * but it is the truth: adopt it, keeping the names it lacks */
 		while (next_snap < snaps.length && snaps[next_snap].event_index <= i) adopt();
 		if (e.tick !== current_tick) {
-			if (current_tick >= 0) track_tick(tracker, current_tick, tick_events, state, effects, fall_segments);
+			if (current_tick >= 0) track_tick(tracker, current_tick, tick_events, state, effects, fall_segments, sounds);
 			tick_events = [];
 			current_tick = e.tick;
 		}
-		apply_event(state, e, effects, chat);
+		apply_event(state, e, effects, chat, sounds);
 		tick_events.push(e);
 		if (i % step === 0) yield i / events.length;
 	}
-	if (current_tick >= 0) track_tick(tracker, current_tick, tick_events, state, effects, fall_segments);
+	if (current_tick >= 0) track_tick(tracker, current_tick, tick_events, state, effects, fall_segments, sounds);
+	sounds.sort((a, b) => a.tick - b.tick);
 	while (next_snap < snaps.length) adopt();
 	let start = game_start_tick(log);
 	let marker = lobby_exit_tick(log);
@@ -632,6 +715,9 @@ function* build_steps(log) {
 		 * the map changes happen there */
 		server_messages: chat.filter(m => m.kind === "server"),
 		effects: effects.filter(e => e.tick >= start),
+		/* {tick, kind, player, x, y}: the sounds of the game, in tick order;
+		 * player names the tank that fired or was hit, for the self sounds */
+		sounds: sounds.filter(s => s.tick >= start),
 		t0: start, t1: log.ticks, final: state,
 		bounds: land_bounds(state.grid),
 	};
