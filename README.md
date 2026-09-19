@@ -55,7 +55,8 @@ The tests build a synthetic replay and exercise the parser on it, then
 parse every `.wbv` in `samples/` in full. That directory holds one real
 game, `smol_war.wbv`: a two-player strict game on Smol War, 28 minutes,
 logged by a WinBolo 2.0.3 server. It is also the file to try the viewer
-on.
+on. The sound rules and the Tauri app's `window.api` shim are tested on
+their own, the latter against a mocked bridge.
 
 # WinBolo Replay Viewer
 
