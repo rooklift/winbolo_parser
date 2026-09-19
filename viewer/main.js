@@ -88,6 +88,8 @@ function build_menu() {
 				{ label: "Next Change", accelerator: "Down", click: () => send("next-change") },
 				{ label: "Go to Beginning", accelerator: "Home", click: () => send("go-to-beginning") },
 				{ label: "Go to End", accelerator: "End", click: () => send("go-to-end") },
+				{ type: "separator" },
+				{ label: "Toggle audio", accelerator: "CmdOrCtrl+A", click: () => send("toggle-sound") },
 			],
 		},
 		{

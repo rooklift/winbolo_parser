@@ -7,7 +7,7 @@
 		"wbvdump": "bin/dump.js"
 	},
 	"scripts": {
-		"test": "node test/test.js",
+		"test": "node test/test.js && node test/test-sound.js",
 		"build-viewer": "node tools/build-viewer-parser.js"
 	},
 	"engines": {
