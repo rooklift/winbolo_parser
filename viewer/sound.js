@@ -107,6 +107,11 @@ function between(events, from, to) {
 	return events.slice(lo, end);
 }
 
+/* Copies of one sound that may play at once. The samples peak near -18 dBFS
+ * and play at half volume, so even this many aligned peaks stay well short of
+ * clipping; the cap bounds the number of audio elements, not the loudness. */
+const MAX_VOICES = 8;
+
 function create_player(make_audio = url => new Audio(url), random = Math.random) {
 	let pools = new Map();
 	let enabled = true;
@@ -121,15 +126,15 @@ function create_player(make_audio = url => new Audio(url), random = Math.random)
 		let pool = pools.get(name);
 		if (!pool) { pool = []; pools.set(name, pool); }
 		let voice = pool.find(v => v.audio.paused || v.audio.ended);
-		if (!voice && pool.length < 4) {
+		if (!voice && pool.length < MAX_VOICES) {
 			let audio = make_audio("sounds/" + name + ".wav");
 			audio.volume = 0.5;
 			voice = { audio, started: 0 };
 			pool.push(voice);
 		}
-		/* Four copies of a sound at once is plenty: past that, the newest
-		 * trigger restarts the copy that has played longest, so a burst of
-		 * gunfire keeps its latest shots rather than losing them. */
+		/* Past MAX_VOICES copies of a sound, the newest trigger restarts the
+		 * copy that has played longest, so a burst of gunfire keeps its
+		 * latest shots rather than losing them. */
 		if (!voice) voice = pool.reduce((oldest, v) => v.started < oldest.started ? v : oldest);
 		let { audio } = voice;
 		voice.started = ++triggers;

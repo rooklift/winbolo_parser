@@ -144,7 +144,7 @@ function test_player() {
 	player.set_enabled(true);
 	let before = played.length;
 	player.advance(Array.from({ length: 50 }, () => shot), 0, 10, 1, 2, () => listener);
-	check("simultaneous copies of each sound are bounded", audios.length <= 5, String(audios.length));
+	check("simultaneous copies of each sound are bounded", audios.length <= 9, String(audios.length));
 	check("a full pool restarts a voice rather than dropping the trigger", played.length - before === 50);
 	player.stop();
 	check("stop pauses everything", audios.every(a => a.paused && a.currentTime === 0));
