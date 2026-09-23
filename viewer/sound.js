@@ -110,7 +110,7 @@ function between(events, from, to) {
 /* Copies of one sound that may play at once. The samples peak near -18 dBFS
  * and play at half volume, so even this many aligned peaks stay well short of
  * clipping; the cap bounds the number of audio elements, not the loudness. */
-const MAX_VOICES = 8;
+const MAX_VOICES = 4;
 
 function create_player(make_audio = url => new Audio(url), random = Math.random) {
 	let pools = new Map();
