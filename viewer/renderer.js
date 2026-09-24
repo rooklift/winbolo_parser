@@ -88,12 +88,10 @@ function load_obj_sprites() {
 			`pillbox_good_${n}`, `pillbox_evil_${n}`, `pillbox_neutral_${n}`, `shell_${n}`);
 	}
 	for (let name of names) {
-		let img = new Image();
-		img.addEventListener("load", () => {
+		BoloSprites.load_image("sprites/objects/" + name + ".png", (img) => {
 			obj_imgs.set(name, img);
 			request_draw();
 		});
-		img.src = "sprites/objects/" + name + ".png";
 	}
 }
 
