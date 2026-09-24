@@ -14,6 +14,7 @@ const inflate = require(path.join(root, "src", "inflate.js"));
 const WinBoloLog = require(path.join(root, "src", "parse.js"));
 const WinBoloGame = require(path.join(root, "viewer", "game.js"));
 const { build } = require(path.join(root, "tools", "build-viewer-parser.js"));
+const build_sprites = require(path.join(root, "tools", "build-viewer-sprites.js")).build;
 
 let failures = 0;
 function check(what, ok, detail = "") {
@@ -385,6 +386,11 @@ function test_log_versions() {
 function test_viewer_build() {
 	let committed = fs.readFileSync(path.join(root, "viewer", "logparse.js"), "utf8").replace(/\r\n/g, "\n");
 	check("viewer/logparse.js is up to date (node tools/build-viewer-parser.js)", committed === build());
+	let committed_sprites = fs.readFileSync(path.join(root, "viewer", "sprite_data.js"), "utf8").replace(/\r\n/g, "\n");
+	check("viewer/sprite_data.js is up to date (node tools/build-viewer-sprites.js)", committed_sprites === build_sprites());
+	let sprite_data = require(path.join(root, "viewer", "sprite_data.js"));
+	let missing = require(path.join(root, "viewer", "sprites.js")).NAMES.filter(name => !sprite_data[name]);
+	check("every terrain sprite the viewer draws is in viewer/sprite_data.js", missing.length === 0, missing.join());
 }
 
 async function test_sample() {

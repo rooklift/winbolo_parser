@@ -39,7 +39,7 @@ with open("package.json") as f:
 	version = pj["version"]
 
 useful_files = [file for file in os.listdir() if file.endswith(".js") or file.endswith(".html") or file.endswith(".css") or file == "package.json"]
-folders = ["sprites", "sounds"]
+folders = ["sounds"]
 
 
 def copy_app_files(build_app_dir):

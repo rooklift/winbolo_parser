@@ -5,7 +5,7 @@
 	<!-- 'unsafe-inline' for styles: the renderer colours player chips and chat
 	     names with style attributes in generated HTML. connect-src names the
 	     Tauri app's command channel; Electron and browsers ignore it. -->
-	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'">
 	<title>WinBolo Replay Viewer</title>
 	<link rel="stylesheet" href="style.css">
 </head>
@@ -81,6 +81,7 @@
 	</div>
 	<input type="file" id="filePick" accept=".wbv,.dat,application/zip" hidden>
 	<script src="format.js"></script>
+	<script src="sprite_data.js"></script>
 	<script src="sprites.js"></script>
 	<script src="logparse.js"></script>
 	<script src="sound.js"></script>
