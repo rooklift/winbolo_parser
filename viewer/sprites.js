@@ -242,10 +242,34 @@ let atlas = null;
 let atlas_x = new Map(); /* name -> x offset of its 16×16 cell in the atlas */
 let ready = false;
 
-/* Load every sprite into a single-row atlas canvas; on_ready fires once,
- * after the last file settles. base is the PNG directory, relative to the
- * page. A missing or broken file just leaves its tiles on the flat-colour
- * underlay. */
+/* Load one image, retrying a failed fetch a few times with growing delays.
+ * The web build fetches a couple of hundred small PNGs at once, and a
+ * single dropped request would otherwise leave its sprite missing until
+ * the page is reloaded. Retries add a query string so a cached failure
+ * can't be served back; the desktop builds read local files and never get
+ * that far. on_first_error fires on the first failure only, for callers
+ * that want to stop waiting while the retries carry on. */
+const RETRY_DELAYS = [500, 1500, 4000, 10000]; /* ms */
+
+function load_image(src, on_load, on_first_error = () => {}) {
+	let attempt = 0;
+	let img = new Image();
+	img.addEventListener("load", () => on_load(img));
+	img.addEventListener("error", () => {
+		if (attempt === 0) on_first_error();
+		if (attempt >= RETRY_DELAYS.length) return;
+		setTimeout(() => {
+			attempt++;
+			img.src = src + "?retry=" + attempt;
+		}, RETRY_DELAYS[attempt]);
+	});
+	img.src = src;
+}
+
+/* Load every sprite into a single-row atlas canvas. on_ready fires once
+ * every file has had its first attempt, and again whenever a retried file
+ * arrives after that. base is the PNG directory, relative to the page. A
+ * file that never loads just leaves its tiles on the flat-colour underlay. */
 function load(on_ready, base = "sprites/") {
 	if (atlas) return;
 	atlas = document.createElement("canvas");
@@ -260,17 +284,25 @@ function load(on_ready, base = "sprites/") {
 		}
 	};
 	NAMES.forEach((name, i) => {
-		let img = new Image();
-		img.addEventListener("load", () => {
+		let settled = false;
+		load_image(base + name + ".png", (img) => {
 			/* Explicit source and destination rects: a decode that comes back
 			 * larger than the file (a browser-side image "enhancement") then
 			 * squashes into its own cell instead of spilling over the next. */
 			actx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight, i * TILE, 0, TILE, TILE);
 			atlas_x.set(name, i * TILE);
+			if (!settled) {
+				settled = true;
+				settle();
+			} else {
+				/* A retry that landed late: the prescaled copies predate it. */
+				scaled_atlases.clear();
+				if (ready) on_ready();
+			}
+		}, () => {
+			settled = true;
 			settle();
 		});
-		img.addEventListener("error", settle);
-		img.src = base + name + ".png";
 	});
 }
 
@@ -350,7 +382,7 @@ function draw_view(ctx, grid, view, w, h, draw_terrain = true, dpr = undefined) 
 }
 
 const BoloSprites = {
-	MIN_ZOOM, NAMES, name_for, load, draw_view, prescale_factor,
+	MIN_ZOOM, NAMES, name_for, load, load_image, draw_view, prescale_factor,
 	get ready() { return ready; },
 };
 
