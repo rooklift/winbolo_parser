@@ -1,9 +1,10 @@
-/* Sprite terrain rendering: WinBolo's 16×16 tile art (sprites/*.png) plus
+/* Sprite terrain rendering: WinBolo's 16×16 tile art (sprite_data.js) plus
  * the neighbour rules that pick which variant each tile displays. The rules
  * are a direct port of screencalc.c from the WinBolo source, copyright
- * 1998-2008 John Morrison, GPL v2. Sprite names are the PNG filenames,
- * which themselves mirror WinBolo's tile enum names (BUILD_SIDECORN1 →
- * building_sidecorn1, ROAD_WATER5 → road_water5_corner, ...). */
+ * 1998-2008 John Morrison, GPL v2. Sprite names are the PNG filenames in
+ * the repository's sprites/ folder, which themselves mirror WinBolo's tile
+ * enum names (BUILD_SIDECORN1 → building_sidecorn1, ROAD_WATER5 →
+ * road_water5_corner, ...). */
 "use strict";
 (function () {
 
@@ -242,11 +243,27 @@ let atlas = null;
 let atlas_x = new Map(); /* name -> x offset of its 16×16 cell in the atlas */
 let ready = false;
 
-/* Load every sprite into a single-row atlas canvas; on_ready fires once,
- * after the last file settles. base is the PNG directory, relative to the
- * page. A missing or broken file just leaves its tiles on the flat-colour
- * underlay. */
-function load(on_ready, base = "sprites/") {
+/* Build one sprite's image from the data in sprite_data.js (generated from
+ * the repository's sprites/ folder by tools/build-viewer-sprites.js), so no
+ * sprite is ever fetched on its own. name is its path there without
+ * ".png", e.g. "grass" or "objects/tank_good_00". on_fail fires instead of
+ * on_load if the sprite is missing or won't decode. */
+function load_image(name, on_load, on_fail = () => {}) {
+	let data = window.BoloSpriteData && window.BoloSpriteData[name];
+	if (!data) {
+		on_fail();
+		return;
+	}
+	let img = new Image();
+	img.addEventListener("load", () => on_load(img));
+	img.addEventListener("error", on_fail);
+	img.src = "data:image/png;base64," + data;
+}
+
+/* Load every terrain sprite into a single-row atlas canvas; on_ready fires
+ * once, after the last one settles. A missing sprite just leaves its tiles
+ * on the flat-colour underlay. */
+function load(on_ready) {
 	if (atlas) return;
 	atlas = document.createElement("canvas");
 	atlas.width = NAMES.length * TILE;
@@ -260,17 +277,14 @@ function load(on_ready, base = "sprites/") {
 		}
 	};
 	NAMES.forEach((name, i) => {
-		let img = new Image();
-		img.addEventListener("load", () => {
+		load_image(name, (img) => {
 			/* Explicit source and destination rects: a decode that comes back
 			 * larger than the file (a browser-side image "enhancement") then
 			 * squashes into its own cell instead of spilling over the next. */
 			actx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight, i * TILE, 0, TILE, TILE);
 			atlas_x.set(name, i * TILE);
 			settle();
-		});
-		img.addEventListener("error", settle);
-		img.src = base + name + ".png";
+		}, settle);
 	});
 }
 
@@ -350,7 +364,7 @@ function draw_view(ctx, grid, view, w, h, draw_terrain = true, dpr = undefined) 
 }
 
 const BoloSprites = {
-	MIN_ZOOM, NAMES, name_for, load, draw_view, prescale_factor,
+	MIN_ZOOM, NAMES, name_for, load, load_image, draw_view, prescale_factor,
 	get ready() { return ready; },
 };
 
