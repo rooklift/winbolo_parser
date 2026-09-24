@@ -1,9 +1,10 @@
-/* Sprite terrain rendering: WinBolo's 16×16 tile art (sprites/*.png) plus
+/* Sprite terrain rendering: WinBolo's 16×16 tile art (sprite_data.js) plus
  * the neighbour rules that pick which variant each tile displays. The rules
  * are a direct port of screencalc.c from the WinBolo source, copyright
- * 1998-2008 John Morrison, GPL v2. Sprite names are the PNG filenames,
- * which themselves mirror WinBolo's tile enum names (BUILD_SIDECORN1 →
- * building_sidecorn1, ROAD_WATER5 → road_water5_corner, ...). */
+ * 1998-2008 John Morrison, GPL v2. Sprite names are the PNG filenames in
+ * the repository's sprites/ folder, which themselves mirror WinBolo's tile
+ * enum names (BUILD_SIDECORN1 → building_sidecorn1, ROAD_WATER5 →
+ * road_water5_corner, ...). */
 "use strict";
 (function () {
 
@@ -242,35 +243,27 @@ let atlas = null;
 let atlas_x = new Map(); /* name -> x offset of its 16×16 cell in the atlas */
 let ready = false;
 
-/* Load one image, retrying a failed fetch a few times with growing delays.
- * The web build fetches a couple of hundred small PNGs at once, and a
- * single dropped request would otherwise leave its sprite missing until
- * the page is reloaded. Retries add a query string so a cached failure
- * can't be served back; the desktop builds read local files and never get
- * that far. on_first_error fires on the first failure only, for callers
- * that want to stop waiting while the retries carry on. */
-const RETRY_DELAYS = [500, 1500, 4000, 10000]; /* ms */
-
-function load_image(src, on_load, on_first_error = () => {}) {
-	let attempt = 0;
+/* Build one sprite's image from the data in sprite_data.js (generated from
+ * the repository's sprites/ folder by tools/build-viewer-sprites.js), so no
+ * sprite is ever fetched on its own. name is its path there without
+ * ".png", e.g. "grass" or "objects/tank_good_00". on_fail fires instead of
+ * on_load if the sprite is missing or won't decode. */
+function load_image(name, on_load, on_fail = () => {}) {
+	let data = window.BoloSpriteData && window.BoloSpriteData[name];
+	if (!data) {
+		on_fail();
+		return;
+	}
 	let img = new Image();
 	img.addEventListener("load", () => on_load(img));
-	img.addEventListener("error", () => {
-		if (attempt === 0) on_first_error();
-		if (attempt >= RETRY_DELAYS.length) return;
-		setTimeout(() => {
-			attempt++;
-			img.src = src + "?retry=" + attempt;
-		}, RETRY_DELAYS[attempt]);
-	});
-	img.src = src;
+	img.addEventListener("error", on_fail);
+	img.src = "data:image/png;base64," + data;
 }
 
-/* Load every sprite into a single-row atlas canvas. on_ready fires once
- * every file has had its first attempt, and again whenever a retried file
- * arrives after that. base is the PNG directory, relative to the page. A
- * file that never loads just leaves its tiles on the flat-colour underlay. */
-function load(on_ready, base = "sprites/") {
+/* Load every terrain sprite into a single-row atlas canvas; on_ready fires
+ * once, after the last one settles. A missing sprite just leaves its tiles
+ * on the flat-colour underlay. */
+function load(on_ready) {
 	if (atlas) return;
 	atlas = document.createElement("canvas");
 	atlas.width = NAMES.length * TILE;
@@ -284,25 +277,14 @@ function load(on_ready, base = "sprites/") {
 		}
 	};
 	NAMES.forEach((name, i) => {
-		let settled = false;
-		load_image(base + name + ".png", (img) => {
+		load_image(name, (img) => {
 			/* Explicit source and destination rects: a decode that comes back
 			 * larger than the file (a browser-side image "enhancement") then
 			 * squashes into its own cell instead of spilling over the next. */
 			actx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight, i * TILE, 0, TILE, TILE);
 			atlas_x.set(name, i * TILE);
-			if (!settled) {
-				settled = true;
-				settle();
-			} else {
-				/* A retry that landed late: the prescaled copies predate it. */
-				scaled_atlases.clear();
-				if (ready) on_ready();
-			}
-		}, () => {
-			settled = true;
 			settle();
-		});
+		}, settle);
 	});
 }
 

@@ -9,7 +9,7 @@
 import os, struct, zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SPRITE = os.path.join(HERE, "..", "sprites", "objects", "tank_good_04.png")
+SPRITE = os.path.join(HERE, "..", "..", "sprites", "objects", "tank_good_04.png")
 BACKGROUND = (0x10, 0x13, 0x1a)
 SIZES = [16, 24, 32, 48, 64, 128, 256]
 

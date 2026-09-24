@@ -50,7 +50,7 @@ const PILL_MAX_ARMOUR = 15;
  * landing wreckage fly at stage 8, so they show as the smallest rings. */
 const EXPLOSION_STAGES = 8;
 
-/* ---------- object sprites (sprites/objects/) ----------
+/* ---------- object sprites (objects/ in sprite_data.js) ----------
  * WinBolo's own art, two-sided: "good" is the viewed player's team,
  * "evil" everyone else. Tank sprite indices match the log's 16-way
  * directions: 0 = north, clockwise. Pillbox indices are armour 0 (dead)
@@ -88,7 +88,7 @@ function load_obj_sprites() {
 			`pillbox_good_${n}`, `pillbox_evil_${n}`, `pillbox_neutral_${n}`, `shell_${n}`);
 	}
 	for (let name of names) {
-		BoloSprites.load_image("sprites/objects/" + name + ".png", (img) => {
+		BoloSprites.load_image("objects/" + name, (img) => {
 			obj_imgs.set(name, img);
 			request_draw();
 		});

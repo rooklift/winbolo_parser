@@ -45,6 +45,10 @@ The same three files run unchanged in a browser as classic scripts
 (`window.WinBoloZip`, `window.WinBoloInflate`, `window.WinBoloLog`);
 `tools/build-viewer-parser.js` concatenates them into `viewer/logparse.js`.
 
+The viewer's sprite art lives as PNGs in `sprites/`; after changing any,
+run `node tools/build-viewer-sprites.js`, which packs them into
+`viewer/sprite_data.js` for the viewer to load in one request.
+
 ## Tests
 
 ```
