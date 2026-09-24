@@ -135,7 +135,55 @@ body {
 	background-size: 5px 5px, 5px 5px;
 	background-repeat: no-repeat;
 }
-#seek { flex: 1; accent-color: #5b8def; }
+/* The seek slider, drawn by hand so every engine matches Firefox's look:
+ * a thin rounded track, light on the unplayed side and accent-blue on the
+ * played side, under a grey thumb with a white ring. Firefox paints the
+ * played side itself (::-moz-range-progress); WebKit/Blink have no such
+ * part, so renderer.js keeps --seek_fill (0 to 1) in step with the value
+ * and the track's gradient splits there. The split sits at the thumb's
+ * centre, which travels from 8px to (100% - 8px), not from 0 to 100%. */
+#seek {
+	flex: 1;
+	--seek_fill: 0;
+	appearance: none;
+	-webkit-appearance: none;
+	height: 16px;
+	background: transparent;
+}
+#seek::-webkit-slider-runnable-track {
+	height: 4px;
+	border-radius: 2px;
+	background: linear-gradient(to right,
+		#5b8def calc(8px + var(--seek_fill) * (100% - 16px)),
+		#e5e5e5 calc(8px + var(--seek_fill) * (100% - 16px)));
+}
+#seek::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	width: 16px;
+	height: 16px;
+	margin-top: -6px;
+	border: 2px solid #fff;
+	border-radius: 50%;
+	background: #666;
+}
+#seek::-moz-range-track {
+	height: 4px;
+	border-radius: 2px;
+	background: #e5e5e5;
+}
+#seek::-moz-range-progress {
+	height: 4px;
+	border-radius: 2px;
+	background: #5b8def;
+}
+#seek::-moz-range-thumb {
+	box-sizing: border-box;
+	width: 16px;
+	height: 16px;
+	border: 2px solid #fff;
+	border-radius: 50%;
+	background: #666;
+}
 
 /* Transport controls are mouse-driven (all keys are global), so never show
  * a focus highlight on them. */
