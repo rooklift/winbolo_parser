@@ -116,6 +116,7 @@ function test_player() {
 		let audio = { url, paused: true, currentTime: 0,
 			play() { this.paused = false; played.push(url); return Promise.resolve(); },
 			pause() { this.paused = true; },
+			addEventListener() {},
 		};
 		audios.push(audio);
 		return audio;
@@ -148,6 +149,39 @@ function test_player() {
 	check("a full pool restarts a voice rather than dropping the trigger", played.length - before === 50);
 	player.stop();
 	check("stop pauses everything", audios.every(a => a.paused && a.currentTime === 0));
+}
+
+/* A copy whose file fails to load is dropped, so a later trigger fetches
+ * afresh; copies that fail together count once, and retries are bounded. */
+function test_player_load_retry() {
+	let urls = [], made = [];
+	let player = WinBoloSound.create_player(url => {
+		let audio = { paused: true, currentTime: 0, handlers: [],
+			play() { this.paused = false; return Promise.resolve(); },
+			pause() { this.paused = true; },
+			addEventListener(type, fn) { if (type === "error") this.handlers.push(fn); },
+			fail() { this.paused = true; for (let fn of this.handlers) fn(); },
+		};
+		urls.push(url);
+		made.push(audio);
+		return audio;
+	}, () => 0.5);
+	let listener = { left: 38.5, top: 42.5, right: 62.5, bottom: 58.5 };
+	let shot = { tick: 10, kind: "shooting", player: 2, x: 50.5, y: 50.5 };
+	let fire = (n = 1) => player.advance(Array.from({ length: n }, () => shot), 0, 10, 1, 2, () => listener);
+	fire(2);
+	made.forEach(a => a.fail());
+	fire();
+	check("a failed load is fetched again, once for copies that failed together", urls.length === 3 && urls[2] === "sounds/shooting_self.wav?retry=1", urls.join());
+	made[2].paused = true;
+	fire();
+	check("a loaded copy is reused as before", made.length === 3);
+	for (let i = 0; i < 4; i++) {
+		made.at(-1).fail();
+		fire();
+	}
+	check("retries are numbered", urls.slice(3).join() === [2, 3, 4].map(n => "sounds/shooting_self.wav?retry=" + n).join(), urls.join());
+	check("past the retry limit the sound is given up on", made.length === 6);
 }
 
 /* ---------- inside the engine: the synthetic log ---------- */
@@ -269,6 +303,7 @@ async function test_samples() {
 	test_variants();
 	test_rules();
 	test_player();
+	test_player_load_retry();
 	test_synthetic();
 	test_events();
 	await test_samples();

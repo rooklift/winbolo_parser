@@ -112,8 +112,13 @@ function between(events, from, to) {
  * clipping; the cap bounds the number of audio elements, not the loudness. */
 const MAX_VOICES = 4;
 
+/* A sound file that fails to load is fetched afresh by a later trigger, up
+ * to this many times; the web build's requests can drop now and then. */
+const MAX_LOAD_RETRIES = 4;
+
 function create_player(make_audio = url => new Audio(url), random = Math.random) {
 	let pools = new Map();
+	let attempts = new Map(); /* name -> failed loads so far */
 	let enabled = true;
 	let triggers = 0;
 	function stop() {
@@ -127,9 +132,22 @@ function create_player(make_audio = url => new Audio(url), random = Math.random)
 		if (!pool) { pool = []; pools.set(name, pool); }
 		let voice = pool.find(v => v.audio.paused || v.audio.ended);
 		if (!voice && pool.length < MAX_VOICES) {
-			let audio = make_audio("sounds/" + name + ".wav");
+			let attempt = attempts.get(name) || 0;
+			if (attempt > MAX_LOAD_RETRIES) return;
+			/* A retry adds a query string so a cached failure can't be served back. */
+			let audio = make_audio("sounds/" + name + ".wav" + (attempt ? "?retry=" + attempt : ""));
 			audio.volume = 0.5;
-			voice = { audio, started: 0 };
+			let created = { audio, started: 0 };
+			/* A copy whose file failed to load would otherwise sit in the pool
+			 * as a paused voice, reused and silent for good. Drop it so the
+			 * next trigger fetches again; copies that failed together count
+			 * as one failure. */
+			audio.addEventListener("error", () => {
+				let i = pool.indexOf(created);
+				if (i !== -1) pool.splice(i, 1);
+				if ((attempts.get(name) || 0) === attempt) attempts.set(name, attempt + 1);
+			});
+			voice = created;
 			pool.push(voice);
 		}
 		/* Past MAX_VOICES copies of a sound, the newest trigger restarts the
