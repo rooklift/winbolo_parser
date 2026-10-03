@@ -422,7 +422,7 @@ function synthetic_log_21() {
 			event(56, [0, 6, 150, 0, 120, 0, 0, 0]),
 			event(56, [1, 8, 255, 0, 0, 0, 0, 0, ...be16(900)]),
 			event(61, [...be16(108), 8, ...double(0.25)]),
-			event(62, [0x10, 0, 255, ...be16(3), 1, 2, 3]),
+			event(62, [0x10, 0, 255, ...be16(4), 5, 1, 2, 3]),                  /* a sprite */
 			event(63, [1, 2, ...be32(-5 >>> 0), ...pstr("goals")]),
 			event(64, [0, 255, ...be16(300), ...pstr("Go!"), 127, 255]),
 			event(64, [0, 255, ...be16(0), ...pstr("")]),
@@ -480,7 +480,8 @@ async function test_winbolo_21() {
 	check("2.1: modifiers", mods.speed === 150 && mods.turn === 120 && mods.accel === 0 && fast.player === 1 && fast.speed === 900, JSON.stringify(fast));
 	check("2.1: rule", ev("RuleSet")[0].rule === 108 && ev("RuleSet")[0].value === 0.25);
 	let panel = ev("ScnPanel")[0];
-	check("2.1: panel", panel.panel === 0 && panel.script === 1 && panel.to === 255 && panel.list.join(",") === "1,2,3");
+	check("2.1: panel", panel.panel === 0 && panel.script === 1 && panel.to === 255 && panel.list.join(",") === "5,1,2,3" &&
+		JSON.stringify(panel.items) === JSON.stringify([{ op: "sprite", x: 1, y: 2, tile: 3 }]));
 	let score = ev("ScnScore")[0];
 	check("2.1: score", score.kind === 1 && score.target === 2 && score.score === -5 && score.label === "goals");
 	let [announce, clear] = ev("ScnAnnounce");
@@ -542,14 +543,87 @@ async function test_sample() {
 	}
 }
 
-/* the synthetic log is shared with test-sound.js, which requires this file */
-module.exports = { synthetic_log, synthetic_attribution, make_zip };
+/* The scenario records against WinBolo 2.1's own limits: a panel's list
+ * read as scnPanelParse reads it, and each record its viewer would ignore
+ * kept raw with a warning, leaving the next event readable. */
+function test_winbolo_21_limits() {
+	let header = Array.from(synthetic_log_21().subarray(0, WinBoloLog.parse_header(synthetic_log_21()).offset));
+	let parse = events => WinBoloLog.parse_log(Uint8Array.from([...header, ...snapshot_21(), ...block(events), 0, 0]));
+	let panel = list => event(62, [0x20, 0, 255, ...be16(list.length), ...list]);
+	let mark = [1, 2, 0, 0, 0, 0, 0];
+	let list = [
+		[1, 0, 0, 128, 128, 4, 1],                             /* a filled rect */
+		[2, 0, 1, 2, 3, 15],                                   /* a line */
+		[3, 64, 10, 2, 1, 1, ...pstr("Wave 2")], mark,         /* large text */
+		[4, 1, 2, 3, 0, 2, 15],                                /* a small name, right */
+		[5, 9, 9, 181],                                        /* a sprite */
+		[6, 1, 2, 3, 4, 5, ...be16(65534), ...be16(65535)],   /* a bar */
+		[7, 64, 98, 2, 1, 1, 1, ...be32(25002)], mark,         /* a large timer counting up */
+	].flat();
+	let log = parse([panel(list)]);
+	check("2.1 limits: a full panel parses", log.warnings.length === 0, log.warnings.join("; "));
+	let items = log.events[0].items || [];
+	check("2.1 limits: panel items", JSON.stringify(items) === JSON.stringify([
+		{ op: "rect", x: 0, y: 0, w: 128, h: 128, colour: 4, fill: true },
+		{ op: "line", x0: 0, y0: 1, x1: 2, y1: 3, colour: 15 },
+		{ op: "text", x: 64, y: 10, colour: 2, size: 2, align: 1, text: "Wave 2" },
+		{ op: "name", x: 1, y: 2, colour: 3, size: 0, align: 2, player: 15 },
+		{ op: "sprite", x: 9, y: 9, tile: 181 },
+		{ op: "bar", x: 1, y: 2, w: 3, h: 4, colour: 5, value: 65534, max: 65535 },
+		{ op: "timer", x: 64, y: 98, colour: 2, size: 2, align: 1, count_up: true, server_tick: 25002 },
+	]), JSON.stringify(items));
+	check("2.1 limits: an empty panel is the clear", parse([panel([])]).events[0].items.length === 0);
+
+	let rule = (index, value, n = 8) => { let b = Buffer.alloc(3 + n); b.writeUInt16BE(index); b[2] = n; if (n === 8) b.writeDoubleBE(value, 3); return [...b]; };
+	let rules = parse([event(61, rule(63, 64)), event(61, rule(155, 1)), event(61, rule(999, 2))]).events;
+	check("2.1 limits: rules are named by index", rules[0].rule_name === "shell_speed" && rules[0].value === 64 &&
+		rules[1].rule_name === "man_bless_tile_terrain_speed" && rules[2].rule === 999 && rules[2].rule_name === undefined && rules[2].value === 2);
+
+	let refused = {
+		"a size mark after a small text": panel([3, 0, 0, 2, 0, 0, ...pstr("hi"), ...mark]),
+		"a size mark alone": panel(mark),
+		"a control byte in panel text": panel([3, 0, 0, 2, 1, 0, 2, 0x41, 0x09]),
+		"panel text past 48 bytes": panel([3, 0, 0, 2, 1, 0, ...pstr("x".repeat(49))]),
+		"a panel colour past 15": panel([2, 0, 0, 1, 1, 16]),
+		"a panel primitive cut short": panel([6, 1, 2, 3]),
+		"an unknown panel primitive": panel([8, 0]),
+		"129 panel primitives": panel(Array(129).fill([5, 0, 0, 0]).flat()),
+		"a panel other than 0": event(62, [0x01, 0, 255, 0, 0]),
+		"a ping from no slot": event(54, [16, 0, 0, 0, 0, 0]),
+		"tank stocks for no slot": event(55, [16, 1, 2, 3, 4]),
+		"a modifiers blob of 7": event(56, [0, 7, 1, 2, 3, 4, 5, 6, 7]),
+		"an entity of kind 3": event(57, [3, 0, 1, 3, 1, 2, 3]),
+		"an entity record cut short": event(57, [0, 0, 1, 6, 1, 2, 3]),
+		"a server line to team 16": event(59, [16, 255, ...pstr("hi")]),
+		"a rule value of 7 bytes": event(61, rule(63, 0, 7)),
+		"a rule value that is not finite": event(61, rule(63, NaN)),
+		"a score for team 0": event(63, [1, 0, ...be32(1), ...pstr("")]),
+		"a score label past 15 bytes": event(63, [0, 0, ...be32(1), ...pstr("x".repeat(16))]),
+		"an announcement past 128 bytes": event(64, [0, 255, 0, 50, ...pstr("x".repeat(129))]),
+		"a marker colour past 15": event(65, [0, 0, 0, 255, 4, 1, 2, 0, 16]),
+		"a marker following no slot": event(65, [0, 1, 0, 255, 4, 0, 0, 16, 1]),
+		"a hint verb past 63 bytes": event(66, [0, ...pstr("x".repeat(64))]),
+		"a status line to slot 16": event(68, [0, 16, ...be32(0xffffffff), ...pstr("")]),
+		"voice set to 2": event(69, [2]),
+		"a settings blob longer than its event": event(53, [17, 0, 0]),
+	};
+	for (let [what, e] of Object.entries(refused)) {
+		let log = parse([e, event(55, [1, 2, 3, 4, 5])]);
+		let [bad, next] = log.events;
+		check(`2.1 limits: ${what} is kept raw`, log.warnings.length === 1 && bad.raw && Object.keys(bad).join() === "tick,type,name,raw" &&
+			next.name === "TankSetStock" && next.player === 1, log.warnings.join("; ") + " " + JSON.stringify(bad));
+	}
+}
+
+/* the synthetic log is shared with test-sound.js and test-rules.js, which require this file */
+module.exports = { synthetic_log, synthetic_attribution, make_zip, snapshot };
 
 if (require.main === module) (async () => {
 	await test_synthetic();
 	test_base_capture_stock();
 	test_log_versions();
 	await test_winbolo_21();
+	test_winbolo_21_limits();
 	test_viewer_build();
 	await test_sample();
 	console.log(failures ? `${failures} FAILED` : "all passed");

@@ -199,6 +199,48 @@ const VOTE_KINDS = { 1: "return to the lobby", 2: "surrender" };
 const PING_KINDS = { 0: "standard", 1: "caution", 2: "assist me", 3: "attack", 4: "on my way", 5: "bot command" };
 /* Which list an EntityChange names */
 const ENTITY_PILL = 0, ENTITY_BASE = 1, ENTITY_START = 2;
+/* The rules a RuleSet names, by index: SIM_RULE_LIST in WinBolo's
+ * sim_rules_names.h, whose order is the index. New rules go on the end,
+ * so the list only grows; the last, man_bless_tile_terrain_speed, came
+ * after 2.1 itself. */
+const RULE_NAMES = [
+	"tank_reload_ticks", "tank_full_shells", "tank_full_mines", "tank_full_trees", "tank_full_armour",
+	"tank_death_ticks", "tank_water_ticks", "shell_damage", "mine_damage", "mine_damage_range",
+	"mine_fatal_divisor", "water_loss_shells", "water_loss_mines", "just_fired_ticks",
+	"tree_hide_distance", "gunsight_min", "gunsight_max", "tank_accel_rate", "tank_decel_rate",
+	"tank_brake_rate", "tank_autoslow_rate", "tank_min_move", "tank_hit_radius",
+	"tank_collision_distance", "tank_nudge_threshold", "tank_nudge_amount", "tank_nudge_iterations",
+	"tank_bump_decay_shift", "tank_pill_pickup_inset", "tank_boat_exit_inset", "tank_slide_step",
+	"tank_wall_glide", "speed_road", "speed_grass", "speed_forest", "speed_river", "speed_swamp",
+	"speed_crater", "speed_rubble", "speed_boat", "speed_deep_sea", "speed_refuel_base", "turn_road",
+	"turn_grass", "turn_forest", "turn_river", "turn_swamp", "turn_crater", "turn_rubble",
+	"turn_boat", "turn_deep_sea", "turn_refuel_base", "man_speed_road", "man_speed_grass",
+	"man_speed_forest", "man_speed_river", "man_speed_swamp", "man_speed_crater", "man_speed_rubble",
+	"man_speed_boat", "man_speed_deep_sea", "man_speed_refuel_base", "shell_life", "shell_speed",
+	"shell_start_add", "lgm_build_ticks", "lgm_cost_road", "lgm_cost_building",
+	"lgm_cost_repair_building", "lgm_cost_pill_repair", "lgm_cost_boat", "lgm_cost_pill_new",
+	"lgm_cost_mine", "lgm_pill_repair_load", "lgm_gather_trees", "lgm_helicopter_speed",
+	"lgm_arrive_tolerance", "lgm_return_tolerance", "lgm_pill_drop_search", "lgm_boat_leave_offset",
+	"lgm_boat_return_offset", "pill_max_armour", "pill_attack_ticks", "pill_attack_min_ticks",
+	"pill_cooldown_ticks", "pill_repair_amount", "pill_range", "pill_shell_damage",
+	"pill_angry_divisor", "pill_fire_length", "pill_base_defend_range", "pill_aim_iterations",
+	"pill_massage_range", "pill_massage_cosine", "base_full_armour", "base_full_shells",
+	"base_full_mines", "base_capture_armour", "base_hit_armour", "base_min_armour", "base_min_shells",
+	"base_min_mines", "base_armour_give", "base_shells_give", "base_mines_give",
+	"base_refuel_armour_ticks", "base_refuel_shells_ticks", "base_refuel_mines_ticks",
+	"base_regen_ticks", "base_status_range", "base_reveal_range", "building_life", "rubble_life",
+	"grass_life", "swamp_life", "mine_fuse_ticks", "big_explosion_threshold", "tank_explosion_damage",
+	"tank_explosion_length", "tank_explosion_move", "tank_explosion_update_ticks",
+	"tank_explosion_width", "tank_explosion_height", "start_tank_range", "start_pill_range",
+	"start_base_range", "start_spawn_separation", "start_scatter_max", "start_neutral_threshold_pct",
+	"sound_soft_range", "sound_none_range", "flood_fill_ticks", "tree_grow_ticks",
+	"tree_grow_initial_ticks", "tree_grow_initial_score", "tree_weight_forest", "tree_weight_grass",
+	"tree_weight_river", "tree_weight_boat", "tree_weight_deep_sea", "tree_weight_swamp",
+	"tree_weight_rubble", "tree_weight_building", "tree_weight_half_building", "tree_weight_crater",
+	"tree_weight_road", "tree_weight_mine", "pill_shell_cap", "pill_max_shells_at_tank",
+	"pill_base_defend_shape", "tank_slide_mac", "tank_slide_armour_bonus", "pill_aim_mac",
+	"tank_collision_mac", "tank_deep_sea_safe", "man_bless_tile_terrain_speed",
+];
 /* Visibility policies of the GameSettings view byte, two bits each */
 const VIEW_POLICIES = { 0: "always", 1: "key", 2: "decay", 3: "off" };
 /* PlayerJoined account flags */
@@ -210,6 +252,19 @@ for (let name in EVENT) EVENT_NAMES[EVENT[name]] = name;
  * from 8 to 1; a shell in flight is its 16-way direction plus 9. */
 const SHELL_FRAME_BASE = 9;
 const LGM_HELICOPTER_FRAME = 3;
+
+/* WinBolo 2.1's limits on what a scenario writes, from scenario_panel.h
+ * and its replay-format.md; its own viewer ignores a record past them */
+const TEAMS = 16;                  /* team 0 is everyone, then 1-15 */
+const MAX_ENTITIES = 16;           /* pillboxes, bases or starts in a list */
+const MARKERS = 16;
+const PANEL_COLOURS = 16;
+const PANEL_MAX = 1017;            /* bytes in a panel's list */
+const PANEL_ITEMS_MAX = 128;       /* primitives in a list, a size mark counting as one */
+const PANEL_TEXT_MAX = 48;
+const SCORE_LABEL_MAX = 15;
+const LINE_MAX = 128;              /* an announcement or a status line */
+const HINT_VERB_MAX = 63;
 
 /* ---------- byte helpers ---------- */
 
@@ -244,6 +299,11 @@ function pstring(bytes, p) {
 function be16(b, p) { return (b[p] << 8) | b[p + 1]; }
 function be32(b, p) { return ((b[p] << 24) | (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]) >>> 0; }
 function be_double(b, p) { return new DataView(b.buffer, b.byteOffset + p, 8).getFloat64(0, false); }
+
+/* A Pascal string at p that ends within b and is at most max long */
+function pstring_fits(b, p, max = 255) { return p < b.length && b[p] <= max && p + 1 + b[p] <= b.length; }
+/* A scenario's destination: a team (0 everyone) and a player (0xff everyone) */
+function destination_ok(team, player) { return team < TEAMS && (player === NEUTRAL || player < MAX_TANKS); }
 function high(b) { return b >> 4; }
 function low(b) { return b & 0x0f; }
 
@@ -402,6 +462,67 @@ function snapshot_grid(s) {
 
 /* ---------- events ---------- */
 
+/* A scenario panel's display list, as scnPanelParse in WinBolo 2.1's
+ * scenario_panel.c reads it: primitives one after another, each an opcode
+ * and fixed operands. Returns the items, or null for a list that would be
+ * refused whole. A text, name or timer at the large size travels as the
+ * normal size followed by a size mark, a rect of 2, 0, 0, 0, 0, 0, which
+ * is folded back into it. */
+const PANEL_OPS = { 1: "rect", 2: "line", 3: "text", 4: "name", 5: "sprite", 6: "bar", 7: "timer" };
+const PANEL_OPERANDS = { 1: 6, 2: 5, 3: 6, 4: 6, 5: 3, 6: 9, 7: 10 };
+const PANEL_SIZE_NORMAL = 1, PANEL_SIZE_LARGE = 2;
+function panel_items(b) {
+	let items = [], wire = 0;
+	let is_mark = p => b.length - p >= 7 && b[p] === 1 && b[p + 1] === PANEL_SIZE_LARGE && b.subarray(p + 2, p + 7).every(x => x === 0);
+	for (let p = 0; p < b.length;) {
+		let op = b[p], n = PANEL_OPERANDS[op];
+		if (!n || p + 1 + n > b.length || ++wire > PANEL_ITEMS_MAX) return null;
+		let a = b.subarray(p + 1, p + 1 + n);
+		let item = { op: PANEL_OPS[op] };
+		if (op === 1) {
+			/* a size mark anywhere but straight after a normal-size item is refused */
+			if (is_mark(p)) return null;
+			Object.assign(item, { x: a[0], y: a[1], w: a[2], h: a[3], colour: a[4], fill: a[5] !== 0 });
+			if (a[5] > 1) return null;
+		} else if (op === 2) {
+			Object.assign(item, { x0: a[0], y0: a[1], x1: a[2], y1: a[3], colour: a[4] });
+		} else if (op === 5) {
+			Object.assign(item, { x: a[0], y: a[1], tile: a[2] });
+		} else if (op === 6) {
+			Object.assign(item, { x: a[0], y: a[1], w: a[2], h: a[3], colour: a[4], value: be16(a, 5), max: be16(a, 7) });
+		} else {
+			/* text, name and timer: x, y, colour, size (0 small, 1 normal),
+			 * align (0 left, 1 centre, 2 right), then their own */
+			if (a[3] > PANEL_SIZE_NORMAL || a[4] > 2) return null;
+			Object.assign(item, { x: a[0], y: a[1], colour: a[2], size: a[3], align: a[4] });
+			if (op === 3) {
+				let len = a[5];
+				if (len > PANEL_TEXT_MAX || p + 1 + n + len > b.length) return null;
+				let t = b.subarray(p + 1 + n, p + 1 + n + len);
+				if (t.some(c => c < 0x20 || c === 0x7f)) return null;
+				item.text = text(t, 0, len);
+				n += len;
+			} else if (op === 4) {
+				if (a[5] >= MAX_TANKS) return null;
+				item.player = a[5];
+			} else {
+				if (a[5] > 1) return null;
+				item.count_up = a[5] === 1;
+				item.server_tick = be32(a, 6); /* counting down to it, or up from it */
+			}
+		}
+		if (item.colour >= PANEL_COLOURS) return null;
+		p += 1 + n;
+		if (item.size === PANEL_SIZE_NORMAL && is_mark(p)) {
+			if (++wire > PANEL_ITEMS_MAX) return null;
+			item.size = PANEL_SIZE_LARGE;
+			p += 7;
+		}
+		items.push(item);
+	}
+	return items;
+}
+
 /* Decoders for the payload of each known event type: the argument bytes
  * logAddEvent wrote, in its order, read back into named fields. */
 const DECODERS = {
@@ -484,7 +605,8 @@ const DECODERS = {
 	[EVENT.GameSettings]: (b, e) => {
 		/* a length-prefixed blob that later servers append to: a byte past
 		 * its end reads as zero, the value before the field existed */
-		let n = Math.min(b[0], b.length - 1);
+		let n = b[0];
+		if (b.length < 1 + n) return false;
 		let s = i => i < n ? b[1 + i] : 0;
 		let views = s(0);
 		e.pill_view = VIEW_POLICIES[views & 3];
@@ -512,34 +634,38 @@ const DECODERS = {
 		e.positional_sound = (s(16) & 2) !== 0;
 	},
 	[EVENT.Ping]: (b, e) => {
+		if (b[0] >= MAX_TANKS) return false;
 		e.player = b[0]; e.kind = b[1];
 		e.world_x = be16(b, 2); e.world_y = be16(b, 4); /* 256 to the square */
 		e.mx = e.world_x >> 8; e.my = e.world_y >> 8;
 	},
-	[EVENT.TankSetStock]: (b, e) => { e.player = b[0]; e.shells = b[1]; e.mines = b[2]; e.armour = b[3]; e.trees = b[4]; },
+	[EVENT.TankSetStock]: (b, e) => {
+		if (b[0] >= MAX_TANKS) return false;
+		e.player = b[0]; e.shells = b[1]; e.mines = b[2]; e.armour = b[3]; e.trees = b[4];
+	},
 	[EVENT.TankSetModifiers]: (b, e) => {
 		/* percentages, 0 meaning the classic tank; a speed past 255 is a
 		 * byte of 255 and then the whole speed as a u16 */
-		e.player = b[0];
 		let n = b[1];
-		if ((n === 6 || n === 8) && b.length >= 2 + n) {
-			e.speed = n === 8 ? be16(b, 8) : b[2];
-			e.accel = b[3]; e.turn = b[4]; e.reload = b[5]; e.dealt = b[6]; e.taken = b[7];
-		}
+		if (b[0] >= MAX_TANKS || (n !== 6 && n !== 8) || b.length < 2 + n) return false;
+		e.player = b[0];
+		e.speed = n === 8 ? be16(b, 8) : b[2];
+		e.accel = b[3]; e.turn = b[4]; e.reload = b[5]; e.dealt = b[6]; e.taken = b[7];
 	},
 	[EVENT.EntityChange]: (b, e) => {
 		/* a pillbox, base or start joined the map or left it; the record is
 		 * the item's, as it now is or as it went */
-		e.kind = b[0]; e.index = b[1]; e.on_map = b[2] !== 0;
-		let n = Math.min(b[3], b.length - 4);
+		let kind = b[0], n = b[3];
+		if (kind > ENTITY_START || b[1] >= MAX_ENTITIES || b[2] > 1 || n < (kind === ENTITY_START ? 3 : 6) || b.length < 4 + n) return false;
+		e.kind = kind; e.index = b[1]; e.on_map = b[2] !== 0;
 		let r = b.subarray(4, 4 + n);
-		if (e.kind === ENTITY_PILL && n >= 6) {
+		if (kind === ENTITY_PILL) {
 			e.pill = e.index;
 			e.record = { x: r[0], y: r[1], owner: r[2], armour: r[3], speed: r[4], in_tank: r[5] !== 0 };
-		} else if (e.kind === ENTITY_BASE && n >= 6) {
+		} else if (kind === ENTITY_BASE) {
 			e.base = e.index;
 			e.record = { x: r[0], y: r[1], owner: r[2], armour: r[3], shells: r[4], mines: r[5] };
-		} else if (e.kind === ENTITY_START && n >= 3) {
+		} else {
 			e.start = e.index;
 			e.record = { x: r[0], y: r[1], dir: r[2] };
 		}
@@ -547,40 +673,69 @@ const DECODERS = {
 	/* bit i set: item i of that list is on the map */
 	[EVENT.EntityMasks]: (b, e) => { e.pills = be16(b, 0); e.bases = be16(b, 2); e.starts = be16(b, 4); },
 	/* team 0 is everyone, as is recipient 0xff */
-	[EVENT.ServerText]: (b, e) => { e.team = b[0]; e.to = b[1]; e.text = pstring(b, 2)[0]; },
+	[EVENT.ServerText]: (b, e) => {
+		if (!destination_ok(b[0], b[1]) || !pstring_fits(b, 2)) return false;
+		e.team = b[0]; e.to = b[1]; e.text = pstring(b, 2)[0];
+	},
 	[EVENT.GameTimeSet]: (b, e) => { e.time = be32(b, 0) | 0; /* server ticks, 100 a second */ },
 	[EVENT.RuleSet]: (b, e) => {
+		/* the value the rule took, as a double whatever the field's type */
+		if (b[2] !== 8 || b.length < 11) return false;
+		let value = be_double(b, 3);
+		if (!Number.isFinite(value)) return false;
 		e.rule = be16(b, 0); /* an index into the server's rules table */
-		if (b[2] === 8 && b.length >= 11) e.value = be_double(b, 3);
+		if (e.rule < RULE_NAMES.length) e.rule_name = RULE_NAMES[e.rule];
+		e.value = value;
 	},
 	[EVENT.ScnPanel]: (b, e) => {
+		let n = be16(b, 3);
+		if ((b[0] & 15) !== 0 || !destination_ok(b[1], b[2]) || n > PANEL_MAX || b.length < 5 + n) return false;
+		let list = b.subarray(5, 5 + n);
+		let items = panel_items(list);
+		if (!items) return false;
 		e.panel = b[0] & 15; e.script = b[0] >> 4; e.team = b[1]; e.to = b[2];
-		e.list = Array.from(b.subarray(5, 5 + be16(b, 3))); /* drawing primitives, see scenario_panel.h */
+		e.list = Array.from(list); /* empty to clear the panel */
+		e.items = items;
 	},
 	[EVENT.ScnScore]: (b, e) => {
-		e.kind = b[0]; e.target = b[1]; /* kind 0: target is a player; 1: a team */
+		/* kind 0: target is a player; 1: a team, 1-15 */
+		let player = b[0] === 0 && b[1] < MAX_TANKS, team = b[0] === 1 && b[1] >= 1 && b[1] < TEAMS;
+		if (!(player || team) || !pstring_fits(b, 6, SCORE_LABEL_MAX)) return false;
+		e.kind = b[0]; e.target = b[1];
 		e.score = be32(b, 2) | 0;
-		e.label = b.length > 6 ? pstring(b, 6)[0] : "";
+		e.label = pstring(b, 6)[0];
 	},
 	[EVENT.ScnAnnounce]: (b, e) => {
+		if (!destination_ok(b[0], b[1]) || !pstring_fits(b, 4, LINE_MAX)) return false;
 		e.team = b[0]; e.to = b[1]; e.time = be16(b, 2); /* server ticks; empty text is the clear */
 		let [t, n] = pstring(b, 4);
 		e.text = t;
 		if (b.length >= 4 + n + 2) { e.x = Math.min(b[4 + n], 254); e.y = Math.min(b[5 + n], 254); }
 	},
 	[EVENT.ScnMarker]: (b, e) => {
-		e.id = b[0]; e.kind = b[1]; e.team = b[2]; e.to = b[3]; /* kind 0 a square, 1 a player, 2 the clear */
-		if (b[4] === 4 && b.length >= 9) { e.x = b[5]; e.y = b[6]; e.target = b[7]; e.colour = b[8]; }
+		/* kind 0 a square, 1 a player, 2 the clear, which still carries
+		 * the four placement bytes */
+		if (b[0] >= MARKERS || b[1] > 2 || !destination_ok(b[2], b[3]) || b[4] !== 4 || b.length < 9
+			|| b[8] >= PANEL_COLOURS || (b[1] === 1 && b[7] >= MAX_TANKS)) return false;
+		e.id = b[0]; e.kind = b[1]; e.team = b[2]; e.to = b[3];
+		e.x = b[5]; e.y = b[6]; e.target = b[7]; e.colour = b[8];
 	},
-	[EVENT.ScnHint]: (b, e) => { e.player = b[0]; e.verb = pstring(b, 1)[0]; },
+	[EVENT.ScnHint]: (b, e) => {
+		if (b[0] >= MAX_TANKS || !pstring_fits(b, 1, HINT_VERB_MAX)) return false;
+		e.player = b[0]; e.verb = pstring(b, 1)[0];
+	},
 	[EVENT.ServerTick]: (b, e) => { e.server_tick = be32(b, 0); },
 	[EVENT.ScnStatus]: (b, e) => {
+		if (!destination_ok(b[0], b[1]) || !pstring_fits(b, 6, LINE_MAX)) return false;
 		e.team = b[0]; e.to = b[1];
 		let end = be32(b, 2); /* a server tick, or none */
 		e.countdown_to = end === 0xffffffff ? null : end;
 		e.text = pstring(b, 6)[0];
 	},
-	[EVENT.VoiceEveryone]: (b, e) => { e.on = b[0] !== 0; },
+	[EVENT.VoiceEveryone]: (b, e) => {
+		if (b[0] > 1) return false;
+		e.on = b[0] !== 0;
+	},
 };
 for (let t = EVENT.SoundBuild; t <= EVENT.SoundManDie; t++) {
 	DECODERS[t] = (b, e) => { e.x = b[0]; e.y = b[1]; };
@@ -602,7 +757,7 @@ const MIN_PAYLOAD = {
 	[EVENT.SpectatorJoined]: 6, [EVENT.SpectatorLeft]: 2, [EVENT.SpectatorChat]: 2,
 	[EVENT.GameSettings]: 1, [EVENT.Ping]: 6, [EVENT.TankSetStock]: 5, [EVENT.TankSetModifiers]: 2,
 	[EVENT.EntityChange]: 4, [EVENT.EntityMasks]: 6, [EVENT.ServerText]: 3, [EVENT.GameTimeSet]: 4,
-	[EVENT.RuleSet]: 3, [EVENT.ScnPanel]: 5, [EVENT.ScnScore]: 6, [EVENT.ScnAnnounce]: 5, [EVENT.ScnMarker]: 5,
+	[EVENT.RuleSet]: 3, [EVENT.ScnPanel]: 5, [EVENT.ScnScore]: 7, [EVENT.ScnAnnounce]: 5, [EVENT.ScnMarker]: 5,
 	[EVENT.ScnHint]: 2, [EVENT.ServerTick]: 4, [EVENT.ScnStatus]: 7, [EVENT.VoiceEveryone]: 1,
 };
 for (let t = EVENT.SoundBuild; t <= EVENT.SoundManDie; t++) MIN_PAYLOAD[t] = 2;
@@ -620,7 +775,12 @@ function decode_event(type, payload, tick, warnings, log_version) {
 		e.raw = Array.from(payload);
 		return e;
 	}
-	decode(payload, e, log_version);
+	/* a decoder that finds its payload out of range refuses it whole, as
+	 * WinBolo's own viewer ignores it: the event keeps its bytes raw */
+	if (decode(payload, e, log_version) === false) {
+		warnings.push(`tick ${tick}: ${e.name} payload is out of range`);
+		return { tick, type, name: e.name, raw: Array.from(payload) };
+	}
 	return e;
 }
 
@@ -844,6 +1004,14 @@ function parse_attribution(bytes) {
 
 /* ---------- the archive ---------- */
 
+/* WinBolo 2.1's scripts.json: what scripts a scripted round ran, and the
+ * rules and regions it opened with, as a JSON object */
+function parse_scripts(bytes) {
+	let scripts = JSON.parse(new TextDecoder("utf-8").decode(bytes));
+	if (!scripts || typeof scripts !== "object" || Array.isArray(scripts)) throw new Error("not a JSON object");
+	return scripts;
+}
+
 /* Open a .wbv (or a bare log.dat): finds and inflates the members, parses
  * the log and, when present, the attribution file. `zip` and `inflate`
  * are the sibling modules, passed in so this file stays free of
@@ -870,11 +1038,10 @@ async function open_archive(bytes, zip, inflate) {
 			log.warnings.push(`attribution.trk: ${err.message}`);
 		}
 	}
-	/* WinBolo 2.1: what scripts a scripted round ran, as JSON */
 	let scripts = null;
 	if (members["scripts.json"]) {
 		try {
-			scripts = JSON.parse(new TextDecoder("utf-8").decode(members["scripts.json"]));
+			scripts = parse_scripts(members["scripts.json"]);
 		} catch (err) {
 			log.warnings.push(`scripts.json: ${err.message}`);
 		}
@@ -884,9 +1051,9 @@ async function open_archive(bytes, zip, inflate) {
 
 const WinBoloLog = {
 	TICKS_PER_SECOND, MAP_SIZE, DEEP_SEA, NEUTRAL, MAX_TANKS, EVENT, EVENT_NAMES, GAME_TYPES, VOTE_KINDS,
-	PING_KINDS, ENTITY_PILL, ENTITY_BASE, ENTITY_START, SHELL_FRAME_BASE, LGM_HELICOPTER_FRAME,
+	PING_KINDS, ENTITY_PILL, ENTITY_BASE, ENTITY_START, RULE_NAMES, SHELL_FRAME_BASE, LGM_HELICOPTER_FRAME,
 	parse_header, parse_steps, parse_log, parse_snapshot, snapshot_grid, decode_runs,
-	parse_attribution, open_archive,
+	parse_attribution, parse_scripts, open_archive,
 };
 
 if (typeof module !== "undefined" && module.exports) {

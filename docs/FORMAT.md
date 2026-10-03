@@ -197,6 +197,15 @@ with no track leading in are mine explosions and landing tank wreckage,
 which use the same frames. Both explosion sites in `shells.c` write the
 same frames, so nothing in the burst itself says.
 
+WinBolo 2.1 makes the speed and the start a scenario's to change: the
+`shell_speed` rule (32 world units a tick, classically) and
+`shell_start_add` (the steps a shell is moved on before it is first
+logged, classically 5). A shell keeps the speed it was fired at. The
+engine starts from the rules `scripts.json` says the round opened with
+and follows RuleSet events, predicting each track at its own speed and
+looking for a new shell's muzzle that many steps behind it; under the
+classic rules it matches exactly as before.
+
 A shell's life is fixed when it is fired, and shows in its age at a fall:
 a tank shell lives 4 × gunsight − 5 logged ticks, the gunsight being 2 to
 14 half-tiles (so 3 ticks at the shortest setting, 51 at the longest, in
@@ -294,9 +303,50 @@ an observer, treats every line as public. Server ticks are 100 a second.
 | 69   | VoiceEveryone    | on                                         | voice chat goes to every player rather than to allies alone |
 
 The viewer applies 57 and 58, puts 59 on the message wire with the
-server's other lines, and draws nothing else of these: pings, scores,
-panels, announcements and markers are what a scenario shows its
-players, not the world.
+server's other lines, follows the shell rules of 61 (above), and draws
+nothing else of these: pings, scores, panels, announcements and markers
+are what a scenario shows its players, not the world.
+
+WinBolo's own viewer ignores a record outside the server's limits, and
+the parser keeps such a record's bytes as `raw`, with a warning, rather
+than decode part of it: a destination's team past 15 or player past 15
+(other than 255); a ping, stocks, modifiers or hint for no slot; a
+modifiers blob other than 6 or 8 bytes; an EntityChange of a kind past 2,
+an index past 15 or a record too short for its kind; a RuleSet value not
+8 bytes or not finite; a panel other than 0, or a list past 1017 bytes or
+one that does not parse (below); a score for team 0 or past 15, or a label
+past 15 bytes; an announcement or status line past 128 bytes; a marker id
+or colour past 15, a kind past 2, a placement not 4 bytes, or a follow
+marker on no slot; a hint verb past 63 bytes; a VoiceEveryone past 1; a
+GameSettings blob longer than its event. The event's own length still
+frames it, so the next event reads as ever.
+
+A RuleSet's rule is an index into WinBolo's `SIM_RULE_LIST`
+(`sim_rules_names.h`), whose order is the index and which only grows at
+its end; the parser names it as `rule_name` (`shell_speed` is 63,
+`shell_start_add` 64) and leaves an index it does not know unnamed.
+
+A panel's list is the display list of WinBolo's `scenario_panel.h`,
+read as its `scnPanelParse` reads it: primitives one after another, an
+opcode and fixed operands each, multi-byte operands big-endian. The
+parser returns them as `items`, beside the bytes as `list`:
+
+| op | primitive | operands |
+|----|-----------|----------|
+| 1  | rect      | x, y, w, h, colour, fill (0 or 1) |
+| 2  | line      | x0, y0, x1, y1, colour |
+| 3  | text      | x, y, colour, size, align, length, then that many bytes (at most 48, none a control byte) |
+| 4  | name      | x, y, colour, size, align, player slot |
+| 5  | sprite    | x, y, tile |
+| 6  | bar       | x, y, w, h, colour, value (2 bytes), max (2 bytes) |
+| 7  | timer     | x, y, colour, size, align, mode (0 down, 1 up), server tick (4 bytes) |
+
+Coordinates are in a square of 128 units; colours are 0-15 of the
+panel's palette; size is 0 small or 1 normal and align 0 left, 1 centre
+or 2 right. A text, name or timer at the large size is written at normal
+size and followed by a size mark, a rect of 2, 0, 0, 0, 0, 0, which the
+parser folds back in as size 2; a mark anywhere else refuses the list. A
+list holds at most 128 primitives, a mark counting as one.
 
 ## Snapshots
 

@@ -1177,10 +1177,17 @@ async function load_log(bytes, name, generation = ++load_claims) {
 			}
 			if (!members["log.dat"]) throw new Error("the archive has no log.dat member");
 			log_bytes = members["log.dat"];
-			archive = { members: Object.keys(members) };
+			archive = { members: Object.keys(members), scripts: null, warnings: [] };
+			if (members["scripts.json"]) {
+				try {
+					archive.scripts = WinBoloLog.parse_scripts(members["scripts.json"]);
+				} catch (err) {
+					archive.warnings.push(`scripts.json: ${err.message}`);
+				}
+			}
 		} else {
 			log_bytes = bytes;
-			archive = { members: ["log.dat"] };
+			archive = { members: ["log.dat"], scripts: null, warnings: [] };
 		}
 		if (generation !== load_generation) throw SUPERSEDED;
 		let steps = WinBoloLog.parse_steps(log_bytes);
@@ -1190,7 +1197,8 @@ async function load_log(bytes, name, generation = ++load_claims) {
 			step = steps.next();
 		}
 		let log = step.value;
-		let build = WinBoloGame.build_steps(log);
+		log.warnings.push(...archive.warnings);
+		let build = WinBoloGame.build_steps(log, archive.scripts);
 		step = build.next();
 		while (!step.done) {
 			await progress("Reconstructing game…", 0.5 + 0.5 * step.value);

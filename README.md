@@ -26,6 +26,7 @@ node bin/dump.js <replay> --events       every event, one per line
 node bin/dump.js <replay> --json         one JSON object per event
 node bin/dump.js <replay> --snapshots    the periodic state snapshots
 node bin/dump.js <replay> --attribution  the attribution.trk records
+node bin/dump.js <replay> --scripts      WinBolo 2.1's scripts.json
 ```
 
 Library:
@@ -137,11 +138,12 @@ knows who fired it and what it hit; a shell that falls at the end of its
 range lands with the Mac viewer's quiet splash rather than a fireball
 (FORMAT.md has the method). Every event type of the 2.03 format and of
 WinBolo 2.1 is decoded, and `attribution.trk` and 2.1's `scripts.json`
-are read, though the viewer draws nothing from them yet; an event type
-from a later WinBolo is skipped by its length. Of 2.1's additions the
-viewer shows the pillboxes, bases and starts a scenario adds and removes,
-and a scenario's server lines on the wire; its pings, scores, panels,
-announcements and markers are decoded but not drawn.
+are read; an event type from a later WinBolo is skipped by its length.
+Of 2.1's additions the viewer shows the pillboxes, bases and starts a
+scenario adds and removes, and a scenario's server lines on the wire,
+and the shell tracker follows a scenario's changes to the shells' speed;
+its pings, scores, panels, announcements and markers are decoded but not
+drawn.
 
 Sound is inferred. The format has Sound events, but no server before
 2.1 writes them (the sample holds none), so the viewer works the sounds

@@ -6,7 +6,8 @@
  *   node bin/dump.js <replay> --chat       messages and player comings and goings
  *   node bin/dump.js <replay> --json       one JSON object per event
  *   node bin/dump.js <replay> --snapshots  the state snapshots
- *   node bin/dump.js <replay> --attribution  the attribution.trk records */
+ *   node bin/dump.js <replay> --attribution  the attribution.trk records
+ *   node bin/dump.js <replay> --scripts    WinBolo 2.1's scripts.json */
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -17,7 +18,7 @@ const WinBoloLog = require(path.join(__dirname, "..", "src", "parse.js"));
 const TPS = WinBoloLog.TICKS_PER_SECOND;
 
 function usage() {
-	console.error("usage: node bin/dump.js <replay> [--events | --chat | --json | --snapshots | --attribution]");
+	console.error("usage: node bin/dump.js <replay> [--events | --chat | --json | --snapshots | --attribution | --scripts]");
 	process.exit(2);
 }
 
@@ -32,7 +33,7 @@ function describe(e) {
 	for (let k in e) {
 		if (k === "tick" || k === "type" || k === "name") continue;
 		let v = e[k];
-		parts.push(`${k}=${typeof v === "string" ? JSON.stringify(v) : Array.isArray(v) ? v.join(",") : v && typeof v === "object" ? JSON.stringify(v) : v}`);
+		parts.push(`${k}=${typeof v === "string" ? JSON.stringify(v) : Array.isArray(v) && !v.some(x => x && typeof x === "object") ? v.join(",") : v && typeof v === "object" ? JSON.stringify(v) : v}`);
 	}
 	return parts.join(" ");
 }
@@ -46,6 +47,10 @@ async function main() {
 	let { log, attribution, scripts, members } = await WinBoloLog.open_archive(bytes, zip, inflate);
 	let h = log.header;
 
+	if (mode === "--scripts") {
+		console.log(scripts ? JSON.stringify(scripts, null, "	") : "no scripts.json in this replay");
+		return;
+	}
 	if (mode === "--json") {
 		for (let e of log.events) process.stdout.write(JSON.stringify(e) + "\n");
 		return;

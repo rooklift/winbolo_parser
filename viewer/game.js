@@ -20,11 +20,12 @@ const EFFECT_TICKS = 30;
  * The log names no shell: each tick lists every shell in flight (square,
  * pixel, 16-way direction) and every explosion (square, pixel, animation
  * stage) as the server holds them. But the server's view is exact and
- * restated every tick, so the lists link up: a shell moves SHELL_SPEED
- * (32 world units, an eighth of a tile) along its heading each tick, it
- * is born at the centre of the tank or pillbox that fired it, and when it
- * dies its flight position stops and a fresh burst appears one tick
- * later, a step along its heading. From that the tracker gives each shell
+ * restated every tick, so the lists link up: a shell moves its speed
+ * along its heading each tick (32 world units, an eighth of a tile, unless
+ * a WinBolo 2.1 scenario changed the shell_speed rule; a shell keeps the
+ * speed it was fired at), it starts a little ahead of the tank or pillbox
+ * that fired it, and when it dies its flight position stops and a fresh
+ * burst appears one tick later, a step along its heading. From that the tracker gives each shell
  * an owner and each burst a cause: terrain (a MapChange at the spot that
  * tick), a pillbox (PillSetHealth on the pillbox there), a tank (one
  * within a tile), or a fall, the shell landing at the end of its range
@@ -45,6 +46,12 @@ const MUZZLE_TOLERANCE = 1.0;            /* tiles: a new shell against the tank 
 const TANK_HIT_BOX = 0.5 + 1 / 32;       /* tiles: tankIsTankHit takes a shell within 128 world units (half a tile) of the centre on both axes; the 1/32 is pixel rounding */
 const BURST_FRAME_TICKS = 28;            /* a burst animates for 23 ticks (stage 8 for two, the rest for three each), with slack */
 const TRACK_GRACE_TICKS = 3;             /* a burst follows its last flight position after at most this many ticks */
+const DIRECTION_ERROR = 2 * Math.sin(Math.PI / 32); /* the log's 16 directions round a 256-way heading: off by up to this per tile travelled */
+/* The rules a shell flies by (WinBolo 2.1's shell_speed, in world units a
+ * tick, and shell_start_add, the steps it starts ahead of its muzzle), with
+ * the classic values; scripts.json gives a round's own and RuleSet events
+ * change them. Out of sim_rules.c's range, a value is ignored. */
+const CLASSIC_SHELL_RULES = { shell_speed: 32, shell_start_add: 5 };
 const DIR_VECTORS = Array.from({ length: 16 }, (_, d) => {
 	let a = d / 16 * 2 * Math.PI; /* 0 north, clockwise */
 	return [Math.sin(a), -Math.cos(a)];
@@ -55,8 +62,19 @@ const MINE_KILL_TICKS = 30;              /* a mine blast this recent under a dyi
 const SINK_TICKS = 4;                    /* a hit and the boat flag dropping this recently before a drowning: the boat was shot from under the tank */
 const TEAM_MESSAGE_TICKS = 25;           /* copies of one team message to its recipients arrive within this many ticks */
 
-function shell_tracker() {
-	return { tracks: [], ended: [], bursts: new Map() };
+function set_shell_rule(rules, name, value) {
+	if (!Number.isInteger(value)) return;
+	if (name === "shell_speed" && value >= 1 && value <= 255) rules.shell_speed = value;
+	if (name === "shell_start_add" && value >= 0 && value <= 0x7fffffff) rules.shell_start_add = value;
+}
+
+function shell_tracker(scripts) {
+	let rules = { ...CLASSIC_SHELL_RULES };
+	let opening = scripts && scripts.rules;
+	if (opening && typeof opening === "object") {
+		for (let name in rules) set_shell_rule(rules, name, opening[name]);
+	}
+	return { tracks: [], ended: [], bursts: new Map(), rules };
 }
 
 function burst_key(e) {
@@ -80,10 +98,16 @@ function track_tick(tr, tick, tick_events, state, effects, fall_segments, sounds
  * see the verdicts. Falls add a splash effect and a fall segment; a birth
  * at a muzzle and an explained burst each add a sound. */
 function track_shells(tr, tick, tick_events, state, effects, fall_segments, sounds, hits) {
-	let flights = [], bursts = [];
+	let flights = [], bursts = [], fired_by = [];
 	for (let e of tick_events) {
+		if (e.type === EV.RuleSet && e.rule_name) set_shell_rule(tr.rules, e.rule_name, e.value);
 		if (e.type !== EV.Shell) continue;
-		if (e.dir !== undefined) flights.push(e);
+		if (e.dir !== undefined) {
+			flights.push(e);
+			/* the rules as they stood when this shell was logged, for a
+			 * shell new this tick */
+			fired_by.push({ step: tr.rules.shell_speed / 256, start_add: tr.rules.shell_start_add });
+		}
 		else bursts.push(e);
 	}
 	if (!flights.length && !bursts.length && !tr.tracks.length) return;
@@ -92,12 +116,15 @@ function track_shells(tr, tick, tick_events, state, effects, fall_segments, soun
 	let pairs = [];
 	for (let i = 0; i < tr.tracks.length; i++) {
 		let t = tr.tracks[i];
-		let px = t.x + DIR_VECTORS[t.dir][0] * SHELL_STEP, py = t.y + DIR_VECTORS[t.dir][1] * SHELL_STEP;
+		let travel = t.step * (tick - t.last_tick);
+		let px = t.x + DIR_VECTORS[t.dir][0] * travel, py = t.y + DIR_VECTORS[t.dir][1] * travel;
+		/* a fast shell strays further from its rounded heading in a tick */
+		let tolerance = Math.max(TRACK_TOLERANCE, travel * DIRECTION_ERROR + 1 / 16);
 		for (let j = 0; j < flights.length; j++) {
 			let f = flights[j];
 			if (f.dir !== t.dir) continue;
 			let d = Math.hypot(world_x(f) - px, world_y(f) - py);
-			if (d <= TRACK_TOLERANCE) pairs.push([d, i, j]);
+			if (d <= tolerance) pairs.push([d, i, j]);
 		}
 	}
 	pairs.sort((a, b) => a[0] - b[0]);
@@ -119,12 +146,25 @@ function track_shells(tr, tick, tick_events, state, effects, fall_segments, soun
 	for (let j = 0; j < flights.length; j++) {
 		if (flight_used.has(j)) continue;
 		let f = flights[j];
+		let { step, start_add } = fired_by[j];
 		let x = world_x(f), y = world_y(f);
 		let [hx, hy] = DIR_VECTORS[f.dir];
-		let owner = null, best = MUZZLE_TOLERANCE, muzzle = null;
+		/* Under other rules the shell is first seen its start offset (and at
+		 * most a step more) out along its heading, so a muzzle is judged by
+		 * how far it sits from there, and off the line; a tank beside a fast
+		 * shell is not the one that fired it. Classic rules keep the plain
+		 * nearest muzzle. */
+		let classic = step === SHELL_STEP && start_add === CLASSIC_SHELL_RULES.shell_start_add;
+		let offset = step * start_add;
+		let owner = null, best = classic ? MUZZLE_TOLERANCE : 0.25 + start_add * Math.SQRT2 / 256, muzzle = null;
 		let consider = (mx, my, who) => {
 			let dx = x - mx, dy = y - my;
 			let d = Math.hypot(dx, dy);
+			if (!classic) {
+				let across = Math.abs(dx * hy - dy * hx);
+				let back = Math.max(offset, Math.min(offset + step, d));
+				d = Math.hypot(d - back, Math.max(0, across - d * DIRECTION_ERROR)) + across * 0.01;
+			}
 			if (d <= best && dx * hx + dy * hy >= -0.25) { best = d; owner = who; muzzle = { x: mx, y: my }; }
 		};
 		for (let p of state.players) {
@@ -137,7 +177,7 @@ function track_shells(tr, tick, tick_events, state, effects, fall_segments, soun
 			if (p.on_map && !p.in_tank && p.armour > 0) consider(p.x + 0.5, p.y + 0.5, PILL_OWNER);
 		}
 		f.owner = owner; f.age = 0;
-		next.push({ x, y, dir: f.dir, age: 0, owner, born: tick, last_tick: tick });
+		next.push({ x, y, dir: f.dir, step, age: 0, owner, born: tick, last_tick: tick });
 		/* one gunshot per shell traced to a muzzle, at the muzzle; a shell
 		 * first seen away from every muzzle is a track lost and found again,
 		 * not a second shot */
@@ -169,9 +209,12 @@ function track_shells(tr, tick, tick_events, state, effects, fall_segments, soun
 			let dx = bx - t.x, dy = by - t.y;
 			let along = dx * hx + dy * hy;
 			let across = Math.abs(dx * hy - dy * hx);
-			if (along < -BURST_BEHIND || along > BURST_AHEAD || across > BURST_ACROSS) continue;
+			/* a faster shell may burst further on */
+			let gap = tick - t.last_tick;
+			let extra = Math.max(0, (t.step - SHELL_STEP) * gap);
+			if (along < -BURST_BEHIND || along > BURST_AHEAD + extra || across > BURST_ACROSS + extra * DIRECTION_ERROR) continue;
 			/* the expected point is a step per tick since the last position */
-			let expected = SHELL_STEP * (tick - t.last_tick);
+			let expected = t.step * gap;
 			let score = across + Math.abs(along - expected) * 0.5;
 			if (score < best_score) { best_score = score; best = t; }
 		}
@@ -681,12 +724,12 @@ function apply_event(s, e, effects, chat, sounds) {
 /* Generator: yields progress in [0, 1], returns the game. One pass over
  * the events collects the message wire, the effects and the final state;
  * seeking then works from the snapshots. */
-function* build_steps(log) {
+function* build_steps(log, scripts = null) {
 	let chat = [];
 	let effects = [];
 	let sounds = [];
 	let fall_segments = [];
-	let tracker = shell_tracker();
+	let tracker = shell_tracker(scripts);
 	let tick_events = [];
 	let current_tick = -1;
 	let snaps = log.snapshots;
@@ -726,7 +769,7 @@ function* build_steps(log) {
 	let marker = lobby_exit_tick(log);
 	if (marker < 0) marker = start;
 	let game = {
-		log, header: log.header, events, snapshots: snaps, snapshot_labels,
+		log, scripts, header: log.header, events, snapshots: snaps, snapshot_labels,
 		/* the lobby before the game is not part of the replay: the clock,
 		 * the seek bar and the effects all begin at the start. The wire
 		 * keeps the lobby's lines, at negative times, so the chat before
@@ -750,8 +793,8 @@ function* build_steps(log) {
 	return game;
 }
 
-function build(log) {
-	let steps = build_steps(log);
+function build(log, scripts = null) {
+	let steps = build_steps(log, scripts);
 	let step = steps.next();
 	while (!step.done) step = steps.next();
 	return step.value;
