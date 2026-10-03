@@ -187,9 +187,20 @@ const EVENT = {
 	CountdownStart: 42, CountdownCancel: 43, MapSkipVote: 44, MapSkipApplied: 45, BalanceApplied: 46,
 	GameVoteStart: 47, GameVoteCast: 48, GameVoteEnd: 49,
 	SpectatorJoined: 50, SpectatorLeft: 51, SpectatorChat: 52,
+	/* WinBolo 2.1 additions, named as in its log.h: lobby settings, smart
+	 * pings, tank stocks and modifiers, and what a scenario script did */
+	GameSettings: 53, Ping: 54, TankSetStock: 55, TankSetModifiers: 56, EntityChange: 57, EntityMasks: 58,
+	ServerText: 59, GameTimeSet: 60, RuleSet: 61, ScnPanel: 62, ScnScore: 63, ScnAnnounce: 64, ScnMarker: 65,
+	ScnHint: 66, ServerTick: 67, ScnStatus: 68, VoiceEveryone: 69,
 };
 /* Vote kinds, from the replays: 1 is a return to the lobby, 2 a surrender */
 const VOTE_KINDS = { 1: "return to the lobby", 2: "surrender" };
+/* Smart ping kinds (Ping events) */
+const PING_KINDS = { 0: "standard", 1: "caution", 2: "assist me", 3: "attack", 4: "on my way", 5: "bot command" };
+/* Which list an EntityChange names */
+const ENTITY_PILL = 0, ENTITY_BASE = 1, ENTITY_START = 2;
+/* Visibility policies of the GameSettings view byte, two bits each */
+const VIEW_POLICIES = { 0: "always", 1: "key", 2: "decay", 3: "off" };
 /* PlayerJoined account flags */
 const ACCOUNT_WBN = 1, ACCOUNT_STEAM = 2, ACCOUNT_BOT = 32;
 const EVENT_NAMES = {};
@@ -202,16 +213,24 @@ const LGM_HELICOPTER_FRAME = 3;
 
 /* ---------- byte helpers ---------- */
 
-let decoder = null;
+let decoder = null, utf8_decoder = null;
 function text(bytes, p, n) {
-	/* WinBolo is a Windows program: names and chat are in the system's
-	 * single-byte code page, near enough always cp1252 */
+	let b = bytes.subarray(p, p + n);
+	/* WinBolo 2 keeps names and chat in UTF-8; the classic Windows program
+	 * used the system's single-byte code page, near enough always cp1252.
+	 * Bytes that are not valid UTF-8 are read as the latter. */
+	if (utf8_decoder === null) {
+		try { utf8_decoder = new TextDecoder("utf-8", { fatal: true }); } catch { utf8_decoder = false; }
+	}
+	if (utf8_decoder && b.some(c => c >= 0x80)) {
+		try { return utf8_decoder.decode(b); } catch { /* not UTF-8 */ }
+	}
 	if (decoder === null) {
 		try { decoder = new TextDecoder("windows-1252"); } catch { decoder = false; }
 	}
-	if (decoder) return decoder.decode(bytes.subarray(p, p + n));
+	if (decoder) return decoder.decode(b);
 	let s = "";
-	for (let i = 0; i < n; i++) s += String.fromCharCode(bytes[p + i]);
+	for (let i = 0; i < n; i++) s += String.fromCharCode(b[i]);
 	return s;
 }
 
@@ -224,6 +243,7 @@ function pstring(bytes, p) {
 
 function be16(b, p) { return (b[p] << 8) | b[p + 1]; }
 function be32(b, p) { return ((b[p] << 24) | (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]) >>> 0; }
+function be_double(b, p) { return new DataView(b.buffer, b.byteOffset + p, 8).getFloat64(0, false); }
 function high(b) { return b >> 4; }
 function low(b) { return b & 0x0f; }
 
@@ -260,7 +280,7 @@ function parse_header(bytes) {
 	return h;
 }
 
-const GAME_TYPES = { 1: "Open", 2: "Tournament", 3: "Strict" };
+const GAME_TYPES = { 1: "Open", 2: "Tournament", 3: "Strict", 4: "Scripted" };
 
 /* ---------- map runs (the map's own RLE, as in bolo_map.c) ---------- */
 
@@ -351,6 +371,8 @@ function parse_snapshot(bytes, p, tick) {
 		let r = bytes.subarray(p, p + n);
 		p += n;
 		let player = { slot: r[0], in_use: r[1] !== 0 };
+		/* WinBolo 2.1 can hold a seat before its tank is built: in use, but
+		 * with nothing after the flag, so no tank, man or name */
 		if (player.in_use && n > 2) {
 			player.tank = { mx: r[2], my: r[3], px: high(r[4]), py: low(r[4]), frame: r[5], on_boat: r[6] !== 0 };
 			player.lgm = { mx: r[7], my: r[8], px: high(r[9]), py: low(r[9]), frame: r[10] };
@@ -362,6 +384,9 @@ function parse_snapshot(bytes, p, tick) {
 			player.name = name;
 			player.location = location;
 			player.allies = Array.from(r.subarray(q + 1, q + 1 + r[q]));
+			q += 1 + r[q];
+			/* WinBolo 2.1 appends the tank's stocks; older logs end here */
+			if (q + 4 <= n) player.stocks = { shells: r[q], mines: r[q + 1], armour: r[q + 2], trees: r[q + 3] };
 		}
 		s.players.push(player);
 	}
@@ -456,6 +481,106 @@ const DECODERS = {
 	},
 	[EVENT.SpectatorLeft]: (b, e) => { e.spectator = b[0]; e.player_name = pstring(b, 1)[0]; },
 	[EVENT.SpectatorChat]: (b, e) => { e.spectator = b[0]; e.text = pstring(b, 1)[0]; },
+	[EVENT.GameSettings]: (b, e) => {
+		/* a length-prefixed blob that later servers append to: a byte past
+		 * its end reads as zero, the value before the field existed */
+		let n = Math.min(b[0], b.length - 1);
+		let s = i => i < n ? b[1 + i] : 0;
+		let views = s(0);
+		e.pill_view = VIEW_POLICIES[views & 3];
+		e.base_view = VIEW_POLICIES[(views >> 2) & 3];
+		e.ally_view = VIEW_POLICIES[(views >> 4) & 3];
+		e.classic_mode = (views & 0x40) !== 0;
+		e.allies_in_trees = (views & 0x80) !== 0;
+		e.pill_view_decay = (s(1) << 8) | s(2); /* seconds */
+		e.base_view_decay = (s(3) << 8) | s(4);
+		e.ally_view_decay = (s(5) << 8) | s(6);
+		e.game_type = s(7);
+		e.ai = s(8);
+		let flags = s(9);
+		e.hidden_mines = (flags & 1) !== 0;
+		e.time_limit = (flags & 2) !== 0;
+		e.auto_lock = (flags & 4) !== 0;
+		e.ranked = (flags & 8) !== 0;
+		e.password = (flags & 16) !== 0;
+		e.allow_new_players = (flags & 32) !== 0;
+		e.classic_overview = (flags & 64) !== 0;
+		e.line_of_sight = (flags & 128) !== 0;
+		e.time_minutes = (s(10) << 8) | s(11);
+		e.lobby_locks = ((s(14) << 8) | s(15)) * 0x10000 + ((s(12) << 8) | s(13)); /* the low half first */
+		e.smart_pings_off = (s(16) & 1) !== 0;
+		e.positional_sound = (s(16) & 2) !== 0;
+	},
+	[EVENT.Ping]: (b, e) => {
+		e.player = b[0]; e.kind = b[1];
+		e.world_x = be16(b, 2); e.world_y = be16(b, 4); /* 256 to the square */
+		e.mx = e.world_x >> 8; e.my = e.world_y >> 8;
+	},
+	[EVENT.TankSetStock]: (b, e) => { e.player = b[0]; e.shells = b[1]; e.mines = b[2]; e.armour = b[3]; e.trees = b[4]; },
+	[EVENT.TankSetModifiers]: (b, e) => {
+		/* percentages, 0 meaning the classic tank; a speed past 255 is a
+		 * byte of 255 and then the whole speed as a u16 */
+		e.player = b[0];
+		let n = b[1];
+		if ((n === 6 || n === 8) && b.length >= 2 + n) {
+			e.speed = n === 8 ? be16(b, 8) : b[2];
+			e.accel = b[3]; e.turn = b[4]; e.reload = b[5]; e.dealt = b[6]; e.taken = b[7];
+		}
+	},
+	[EVENT.EntityChange]: (b, e) => {
+		/* a pillbox, base or start joined the map or left it; the record is
+		 * the item's, as it now is or as it went */
+		e.kind = b[0]; e.index = b[1]; e.on_map = b[2] !== 0;
+		let n = Math.min(b[3], b.length - 4);
+		let r = b.subarray(4, 4 + n);
+		if (e.kind === ENTITY_PILL && n >= 6) {
+			e.pill = e.index;
+			e.record = { x: r[0], y: r[1], owner: r[2], armour: r[3], speed: r[4], in_tank: r[5] !== 0 };
+		} else if (e.kind === ENTITY_BASE && n >= 6) {
+			e.base = e.index;
+			e.record = { x: r[0], y: r[1], owner: r[2], armour: r[3], shells: r[4], mines: r[5] };
+		} else if (e.kind === ENTITY_START && n >= 3) {
+			e.start = e.index;
+			e.record = { x: r[0], y: r[1], dir: r[2] };
+		}
+	},
+	/* bit i set: item i of that list is on the map */
+	[EVENT.EntityMasks]: (b, e) => { e.pills = be16(b, 0); e.bases = be16(b, 2); e.starts = be16(b, 4); },
+	/* team 0 is everyone, as is recipient 0xff */
+	[EVENT.ServerText]: (b, e) => { e.team = b[0]; e.to = b[1]; e.text = pstring(b, 2)[0]; },
+	[EVENT.GameTimeSet]: (b, e) => { e.time = be32(b, 0) | 0; /* server ticks, 100 a second */ },
+	[EVENT.RuleSet]: (b, e) => {
+		e.rule = be16(b, 0); /* an index into the server's rules table */
+		if (b[2] === 8 && b.length >= 11) e.value = be_double(b, 3);
+	},
+	[EVENT.ScnPanel]: (b, e) => {
+		e.panel = b[0] & 15; e.script = b[0] >> 4; e.team = b[1]; e.to = b[2];
+		e.list = Array.from(b.subarray(5, 5 + be16(b, 3))); /* drawing primitives, see scenario_panel.h */
+	},
+	[EVENT.ScnScore]: (b, e) => {
+		e.kind = b[0]; e.target = b[1]; /* kind 0: target is a player; 1: a team */
+		e.score = be32(b, 2) | 0;
+		e.label = b.length > 6 ? pstring(b, 6)[0] : "";
+	},
+	[EVENT.ScnAnnounce]: (b, e) => {
+		e.team = b[0]; e.to = b[1]; e.time = be16(b, 2); /* server ticks; empty text is the clear */
+		let [t, n] = pstring(b, 4);
+		e.text = t;
+		if (b.length >= 4 + n + 2) { e.x = Math.min(b[4 + n], 254); e.y = Math.min(b[5 + n], 254); }
+	},
+	[EVENT.ScnMarker]: (b, e) => {
+		e.id = b[0]; e.kind = b[1]; e.team = b[2]; e.to = b[3]; /* kind 0 a square, 1 a player, 2 the clear */
+		if (b[4] === 4 && b.length >= 9) { e.x = b[5]; e.y = b[6]; e.target = b[7]; e.colour = b[8]; }
+	},
+	[EVENT.ScnHint]: (b, e) => { e.player = b[0]; e.verb = pstring(b, 1)[0]; },
+	[EVENT.ServerTick]: (b, e) => { e.server_tick = be32(b, 0); },
+	[EVENT.ScnStatus]: (b, e) => {
+		e.team = b[0]; e.to = b[1];
+		let end = be32(b, 2); /* a server tick, or none */
+		e.countdown_to = end === 0xffffffff ? null : end;
+		e.text = pstring(b, 6)[0];
+	},
+	[EVENT.VoiceEveryone]: (b, e) => { e.on = b[0] !== 0; },
 };
 for (let t = EVENT.SoundBuild; t <= EVENT.SoundManDie; t++) {
 	DECODERS[t] = (b, e) => { e.x = b[0]; e.y = b[1]; };
@@ -475,6 +600,10 @@ const MIN_PAYLOAD = {
 	[EVENT.MapSkipVote]: 1, [EVENT.MapSkipApplied]: 1, [EVENT.BalanceApplied]: 0,
 	[EVENT.GameVoteStart]: 3, [EVENT.GameVoteCast]: 3, [EVENT.GameVoteEnd]: 2,
 	[EVENT.SpectatorJoined]: 6, [EVENT.SpectatorLeft]: 2, [EVENT.SpectatorChat]: 2,
+	[EVENT.GameSettings]: 1, [EVENT.Ping]: 6, [EVENT.TankSetStock]: 5, [EVENT.TankSetModifiers]: 2,
+	[EVENT.EntityChange]: 4, [EVENT.EntityMasks]: 6, [EVENT.ServerText]: 3, [EVENT.GameTimeSet]: 4,
+	[EVENT.RuleSet]: 3, [EVENT.ScnPanel]: 5, [EVENT.ScnScore]: 6, [EVENT.ScnAnnounce]: 5, [EVENT.ScnMarker]: 5,
+	[EVENT.ScnHint]: 2, [EVENT.ServerTick]: 4, [EVENT.ScnStatus]: 7, [EVENT.VoiceEveryone]: 1,
 };
 for (let t = EVENT.SoundBuild; t <= EVENT.SoundManDie; t++) MIN_PAYLOAD[t] = 2;
 
@@ -511,11 +640,19 @@ function* parse_steps(bytes) {
 	let p = header.offset;
 	let finished = false;
 	let next_yield = 0;
-	let after_snapshot = false;
-	/* The no-events record that follows a snapshot counts one tick too
-	 * many: the game does not run during it (a shell in flight across a
-	 * snapshot moves one step, not two, and the attribution track's clock
-	 * agrees). Its count is trimmed by one, so a bare 1 takes no tick. */
+	/* The server writes its periodic snapshot partway through a tick: it
+	 * flushes the events the tick has so far as a block of their own, then
+	 * writes the snapshot, and the tick's own record follows it, so the
+	 * tick is split across the two. The first record after such a
+	 * snapshot (a no-events record, or from 2.1 a block holding the
+	 * ServerTick) continues the flushed block's tick rather than taking a
+	 * new one: a no-events count is trimmed by one, so a bare 1 takes no
+	 * tick, and an event block shares the flushed block's tick. A shell in
+	 * flight across a snapshot moves one step, not two, and the server's
+	 * clocks agree. */
+	let after_snapshot = false; /* the record before this one was a snapshot that a block preceded */
+	let last_was_block = false; /* the last record that took a tick was an event block */
+	let anchor = null; /* the last ServerTick: { server_tick, tick } */
 	let idle = n => after_snapshot && n > 0 ? n - 1 : n;
 
 	while (p < bytes.length) {
@@ -537,12 +674,14 @@ function* parse_steps(bytes) {
 			tick += idle(bytes[p + 1]);
 			p += 2;
 			after_snapshot = false;
+			last_was_block = false;
 		} else if (rec === REC_NOEVENTS_LONG) {
 			if (p + 3 > bytes.length) break;
 			/* little-endian, alone among the stream's counts */
 			tick += idle(bytes[p + 1] | (bytes[p + 2] << 8));
 			p += 3;
 			after_snapshot = false;
+			last_was_block = false;
 		} else if (rec === REC_EVENT || rec === REC_EVENT_LONG) {
 			let count;
 			if (rec === REC_EVENT) {
@@ -554,6 +693,9 @@ function* parse_steps(bytes) {
 				count = be16(bytes, p + 1);
 				p += 3;
 			}
+			/* the block's extent and types first: which tick it takes
+			 * depends on what it holds */
+			let block = [];
 			for (let i = 0; i < count; i++) {
 				if (p + 3 > bytes.length) {
 					warnings.push(`offset ${p}: event block cut short at tick ${tick}`);
@@ -567,18 +709,46 @@ function* parse_steps(bytes) {
 					p = bytes.length;
 					break;
 				}
-				events.push(decode_event(type, bytes.subarray(p + 3, p + 3 + len), tick, warnings, header.version));
+				block.push({ type, payload: bytes.subarray(p + 3, p + 3 + len) });
 				p += 3 + len;
 			}
-			tick++;
+			let block_tick = after_snapshot ? tick - 1 : tick;
+			/* WinBolo 2.1 follows a snapshot with a block holding only
+			 * EntityMasks, the part of the world the snapshot has no room
+			 * for. It is written straight after the snapshot, not by a game
+			 * tick, so it takes none and leaves the snapshot's effect on the
+			 * next record alone; it is dated with the tick the snapshot was
+			 * written in, as that record will be. */
+			if (block.length && block.every(x => x.type === EVENT.EntityMasks)) {
+				for (let x of block) events.push(decode_event(x.type, x.payload, block_tick, warnings, header.version));
+				continue;
+			}
+			/* From 2.1 the server's own tick, 100 a second, is in the block
+			 * after every snapshot. Two ticks of it are one of the log's,
+			 * so the previous one says which tick this block is; it settles
+			 * the one case the rule above gets wrong, a block before the
+			 * snapshot that was the previous tick's, written before the
+			 * snapshot's tick had any events of its own. */
+			let marker = block.find(x => x.type === EVENT.ServerTick && x.payload.length >= 4);
+			let server_tick = marker ? be32(marker.payload, 0) : null;
+			if (after_snapshot && server_tick !== null && anchor && server_tick > anchor.server_tick
+				&& anchor.tick + (server_tick - anchor.server_tick) / 2 === tick) {
+				block_tick = tick;
+			}
+			for (let x of block) events.push(decode_event(x.type, x.payload, block_tick, warnings, header.version));
+			if (server_tick !== null) anchor = { server_tick, tick: block_tick };
+			tick = block_tick + 1;
 			after_snapshot = false;
+			last_was_block = true;
 		} else if (rec === REC_SNAPSHOT) {
 			let s = parse_snapshot(bytes, p + 1, tick);
 			s.event_index = events.length; /* first event at or after this snapshot */
 			delete s.end;
 			snapshots.push(s);
 			p = s.end === undefined ? snapshot_end(bytes, p + 1) : s.end;
-			after_snapshot = true;
+			/* a block before the snapshot was the flush of the snapshot's own
+			 * tick; a no-events record before it counted only ticks before */
+			after_snapshot = last_was_block;
 		} else {
 			warnings.push(`offset ${p}: unknown record type ${rec} at tick ${tick}; stopping`);
 			break;
@@ -700,12 +870,21 @@ async function open_archive(bytes, zip, inflate) {
 			log.warnings.push(`attribution.trk: ${err.message}`);
 		}
 	}
-	return { log, attribution, members: Object.keys(members), comment: entries.comment };
+	/* WinBolo 2.1: what scripts a scripted round ran, as JSON */
+	let scripts = null;
+	if (members["scripts.json"]) {
+		try {
+			scripts = JSON.parse(new TextDecoder("utf-8").decode(members["scripts.json"]));
+		} catch (err) {
+			log.warnings.push(`scripts.json: ${err.message}`);
+		}
+	}
+	return { log, attribution, scripts, members: Object.keys(members), comment: entries.comment };
 }
 
 const WinBoloLog = {
 	TICKS_PER_SECOND, MAP_SIZE, DEEP_SEA, NEUTRAL, MAX_TANKS, EVENT, EVENT_NAMES, GAME_TYPES, VOTE_KINDS,
-	SHELL_FRAME_BASE, LGM_HELICOPTER_FRAME,
+	PING_KINDS, ENTITY_PILL, ENTITY_BASE, ENTITY_START, SHELL_FRAME_BASE, LGM_HELICOPTER_FRAME,
 	parse_header, parse_steps, parse_log, parse_snapshot, snapshot_grid, decode_runs,
 	parse_attribution, open_archive,
 };

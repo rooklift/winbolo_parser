@@ -251,7 +251,7 @@ function display_grid() {
 	if (display_grid_version !== cur.grid_version || !display_grid_cache) {
 		display_grid_cache = cur.grid.slice();
 		for (const b of cur.bases) {
-			display_grid_cache[b.y * MAP_SIZE + b.x] = ROAD;
+			if (b.on_map) display_grid_cache[b.y * MAP_SIZE + b.x] = ROAD;
 		}
 		display_grid_version = cur.grid_version;
 	}
@@ -387,6 +387,7 @@ function zoom_to_action() {
 /* Bounding box of the map's start (spawn) points, or null if it has none. */
 function start_bounds() {
 	let starts = cur && cur.starts.length ? cur.starts : (game && game.final.starts);
+	starts = starts && starts.filter(st => st.on_map);
 	if (!starts || !starts.length) return null;
 	let minx = MAP_SIZE, miny = MAP_SIZE, maxx = 0, maxy = 0;
 	for (let st of starts) {
@@ -755,6 +756,7 @@ function draw_base_stock_labels() {
 	if (!base_stocks_enabled) return;
 	let z = view.zoom;
 	for (let b of cur.bases) {
+		if (!b.on_map) continue;
 		draw_object_label(`${b.shells}/${b.mines}/${b.armour}`,
 			tile_to_screen_x(b.x) + z / 2, tile_to_screen_y(b.y) + z / 2, z / 2);
 	}
@@ -765,6 +767,7 @@ function draw_bases() {
 	let r = Math.max(2.5, z * 0.42);
 	let good = good_team();
 	for (const b of cur.bases) {
+		if (!b.on_map) continue;
 		let side = b.owner === NEUTRAL ? "neutral" : item_side(b, good);
 		let img = obj_sprite(`base_${side}`);
 		if (img) {
@@ -792,7 +795,7 @@ function draw_pills(dead) {
 	let r = Math.max(2, z * 0.36);
 	let good = good_team();
 	for (let p of cur.pills) {
-		if (p.in_tank || (p.armour === 0) !== dead) continue;
+		if (!p.on_map || p.in_tank || (p.armour === 0) !== dead) continue;
 		let cx = tile_to_screen_x(p.x) + z / 2;
 		let cy = tile_to_screen_y(p.y) + z / 2;
 		let side = pill_colour_side(p, good);
@@ -832,7 +835,7 @@ function draw_pillbox_labels() {
 	let r = Math.max(3, z * 0.45);
 	for (let pillbox = 0; pillbox < cur.pills.length; pillbox++) {
 		let p = cur.pills[pillbox];
-		if (p.in_tank) continue;
+		if (!p.on_map || p.in_tank) continue;
 		let cx = tile_to_screen_x(p.x) + z / 2;
 		let cy = tile_to_screen_y(p.y) + z / 2;
 		draw_object_label(`#${pillbox}`, cx, cy, r);
@@ -1020,22 +1023,6 @@ function draw_effects() {
 				ctx.stroke();
 				break;
 			}
-			case "SoundHitTank": case "SoundHitTree": case "SoundHitWall": {
-				ctx.strokeStyle = `rgba(255,${180 - age * 120 | 0},60,${1 - age})`;
-				ctx.lineWidth = Math.max(1, z * 0.12);
-				ctx.beginPath();
-				ctx.arc(cx + z / 2, cy + z / 2, (0.2 + age * 0.5) * z, 0, Math.PI * 2);
-				ctx.stroke();
-				break;
-			}
-			case "SoundExplosion": case "SoundBigExplosion": case "SoundMineExplode": {
-				ctx.strokeStyle = `rgba(255,120,40,${1 - age})`;
-				ctx.lineWidth = Math.max(1.5, z * 0.2);
-				ctx.beginPath();
-				ctx.arc(cx + z / 2, cy + z / 2, (0.4 + age * (e.type === "SoundBigExplosion" ? 1.6 : 0.9)) * z, 0, Math.PI * 2);
-				ctx.stroke();
-				break;
-			}
 			case "splash": {
 				/* a shell landing at the end of its range: the Ancient Bolo
 				 * viewer's ripple, a thin pale ring spreading and fading */
@@ -1046,14 +1033,13 @@ function draw_effects() {
 				ctx.stroke();
 				break;
 			}
-			case "lgm_death": case "SoundManDie": {
+			case "lgm_death": {
 				/* the man dies in a burst of streaks flying out from his
 				 * square: each streak's head races outward and its tail
 				 * detaches from the centre behind it, the whole fading */
 				let burst = lgm_death_burst(e);
 				let head = 1 - (1 - age) * (1 - age);
 				let tail = age * age;
-				if (e.type === "SoundManDie") { cx += z / 2; cy += z / 2; }
 				ctx.globalAlpha = 1 - age;
 				ctx.strokeStyle = e.player !== undefined ? side_color(e.player) : "#fff";
 				ctx.lineWidth = Math.max(1, z * 0.1);
@@ -1344,9 +1330,9 @@ function save_map() {
 	let owner = o => o > 15 ? 16 : o; /* WinBolo's 0xff neutral is the codec's 16 */
 	let map = {
 		grid: start.grid,
-		pills: start.pills.map(p => ({ x: p.x, y: p.y, owner: owner(p.owner), armour: p.armour, speed: p.speed ?? 50 })),
-		bases: start.bases.map(b => ({ x: b.x, y: b.y, owner: owner(b.owner), armour: b.armour, shells: b.shells, mines: b.mines })),
-		starts: start.starts.map(s => ({ x: s.x, y: s.y, dir: s.dir })),
+		pills: start.pills.filter(p => p.on_map).map(p => ({ x: p.x, y: p.y, owner: owner(p.owner), armour: p.armour, speed: p.speed ?? 50 })),
+		bases: start.bases.filter(b => b.on_map).map(b => ({ x: b.x, y: b.y, owner: owner(b.owner), armour: b.armour, shells: b.shells, mines: b.mines })),
+		starts: start.starts.filter(s => s.on_map).map(s => ({ x: s.x, y: s.y, dir: s.dir })),
 	};
 	let bytes;
 	try {

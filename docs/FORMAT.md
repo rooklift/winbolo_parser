@@ -7,6 +7,7 @@ minizip, whose archive comment is `WinBolo Log File`. It holds:
 |-------------------|----------------------------------------------------------|
 | `log.dat`         | the game log: header, state snapshots and a tick stream  |
 | `attribution.trk` | newer servers only; a record of who did what, where      |
+| `scripts.json`    | WinBolo 2.1, a round that ran scenario scripts only: what they were |
 
 The layout of `log.dat` is that of `log.c` in the WinBolo source (John
 Morrison, 1998-2008, GPL v2, e.g. the [milki/winbolo](https://github.com/milki/winbolo)
@@ -15,18 +16,24 @@ inspection of replays written by WinBolo 2.0.3, whose source is not
 public, and then checked against John Morrison's own specification of the
 2.03 format, which named the new events and the attribution track's
 records; this document follows his names. Where it says "public source"
-it means the last GPL release, which writes log version 0.
+it means the last GPL release, which writes log version 0. **WinBolo 2.1**
+is open source again (GPL v3), and its additions below are from its
+`log.c` and `docs/replay-format.md`, checked against replays recorded with
+its dedicated server.
 
 All multi-byte integers are big-endian unless stated. Strings are Pascal
-strings: a length byte, then that many single-byte (cp1252) characters.
+strings: a length byte, then that many bytes. WinBolo 2 writes names and
+chat in UTF-8; the classic program wrote the Windows code page, near
+enough always cp1252, and the parser reads anything that is not valid
+UTF-8 as that.
 
 ## Header
 
 ```
 "WBOLOMOV"           8 bytes, no terminator
-version              1 byte; 2 in current replays (the public source writes 0)
+version              1 byte; 2, or 3 from WinBolo 2.1 (the public source writes 0)
 map name             Pascal string; the map loaded when the log began
-game type            1 byte: 1 open, 2 tournament, 3 strict
+game type            1 byte: 1 open, 2 tournament, 3 strict, 4 scripted (2.1)
 hidden mines         1 byte, boolean
 AI                   1 byte (allow computer tanks: 0 no, 1 yes, 2 yes with advantage, 3 full)
 password             1 byte, boolean
@@ -57,11 +64,10 @@ records, each starting with a type byte:
 | 5    | snapshot              | the full game state, below; takes no tick            |
 
 An events record is one tick. A no-events record is that many ticks. A
-snapshot is written between ticks and describes the state after the events
-before it: the server flushes the pending tick before writing one. The
-server writes a snapshot at the start and then every 125 ticks (2.5 s;
-600 in the public source), skipping the write when nothing has happened
-since the last one.
+snapshot takes no tick and describes the state after the events before
+it. The server writes a snapshot at the start and then every 125 ticks
+(2.5 s; 600 in the public source), skipping the write when nothing has
+happened since the last one.
 
 The long no-events count is little-endian, the one count in the stream
 that is (the 2.03 specification says big-endian; the bytes say otherwise:
@@ -70,18 +76,28 @@ writer that uses the short record up to 255 produces, and read big-endian
 they are noise). Reading it big-endian turns a five-second wait into
 minutes.
 
-**The no-events record after a snapshot is one tick too long.** Nearly
-every snapshot is followed by a no-events record of 1, in the middle of
-play, and no game tick happens in it: a shell in flight across the
-snapshot moves one step, not two, and the attribution track's 10 ms
-clock, which does not count it, agrees to within a tick over a round
-once it is dropped. When the game is quiet the extra tick is folded into
-a longer no-events record after the snapshot. The parser takes one tick
-off the first no-events record after a snapshot. A reader that keeps it
-runs 0.8 % fast, six seconds over a thirteen-minute round; the official
-viewer keeps it, and also counts the snapshot record itself and every
-no-events record as a tick more, so its clock runs 2 to 3 % ahead of the
-game's.
+**A snapshot splits the tick it is written in.** The server writes the
+periodic snapshot partway through a tick, after that tick's positions and
+shells are queued: it flushes them as an events record of their own,
+writes the snapshot, and the tick's own record follows it. So nearly
+every snapshot in play sits between an events record and a no-events
+record of 1 (from 2.1, an events record holding the ServerTick), and the
+two halves are one tick: a shell in flight across the snapshot moves one
+step, not two. The parser counts the first record after a snapshot that
+an events record precedes as continuing that record's tick: a no-events
+count loses one, so a bare 1 takes no tick, and an events record shares
+the flushed record's tick. A snapshot that a no-events record precedes
+was written in a tick with nothing queued, and the records after it count
+in full. The one case this gets wrong is an events record before the
+snapshot that was the previous tick's own, written when the snapshot's
+tick had queued nothing; the two are written alike. From 2.1 the
+ServerTick after the snapshot settles it (below); before 2.1 it costs a
+tick, now and then. Read this way, 2.1's own clock agrees with the count
+exactly, and so, as near as it can be matched, does the attribution
+track's in older logs. A reader that counts every record runs 0.8 %
+fast, six seconds over a thirteen-minute round; the official viewer
+does, and also counts the snapshot record itself and every no-events
+record as a tick more, so its clock runs 2 to 3 % ahead of the game's.
 
 ### Version 2 changes to the stream
 
@@ -94,7 +110,36 @@ game's.
   skipped, and the parser does so, keeping their payload raw.
 - **New event types** appear, for the lobby, votes and spectators. See
   below. A reader should skip any type it does not know by its length:
-  2.04 adds a type 53, and more may follow.
+  2.1 adds types 53 to 69, and more may follow.
+
+### Version 3 and WinBolo 2.1
+
+Version 3 changes one event's shape: PillSetHealth carries the pillbox and
+its armour in a byte each, armour having outgrown a nibble. Nothing else
+in the framing changed. WinBolo 2.1 writes version 3 and adds, without a
+version change of their own:
+
+- **Event types 53 to 69** (below): the lobby's settings, smart pings,
+  tank stocks and modifiers, and what a scenario script does to the world
+  and shows the players.
+- **Pillboxes, bases and starts come and go.** A scenario can add and
+  remove them mid-round (EntityChange). A removal leaves a tombstone: the
+  item keeps its number and its record, and the list's count stays, so the
+  snapshot still lists it. Which items are on the map is said by an
+  **EntityMasks record after every snapshot**, written as an events record
+  holding that one event; it is written straight after the snapshot and
+  takes no tick. It is left out when everything is on the map, so a
+  reader starts each snapshot with every item on the map and applies the
+  masks when they come.
+- **ServerTick**, the server's own tick (100 a second, two to one of the
+  log's), in the record after every snapshot and every 250 server ticks.
+  It names the tick the record after a snapshot is, settling the one case
+  the snapshot rule above cannot.
+- **Sound events** are written, for gunfire, farming, building, mines
+  laid and going off, explosions and builders dying. No earlier server
+  wrote any.
+- **Snapshots** add each tank's stocks to its player record, and a seat
+  can be held before its tank is built (below).
 
 ## Events
 
@@ -110,7 +155,7 @@ with a in the high nibble and b in the low.
 | 4    | LgmLocation       | nibble(slot, frame), mx, my, nibble(px, py). Logged every tick the man is out of the tank; frames 0-2 walk, 3 is the parachute |
 | 5    | MapChange         | x, y, terrain (file terrain codes, below)                     |
 | 6    | Shell             | mx, my, nibble(px, py), frame. Logged every tick for every shell and explosion: frame 9-24 is a shell flying in direction frame - 9; frame 8 down to 1 is an explosion animating; the stages step down every third tick on a clock shared by all explosions, so the first stage a burst is logged at may be 8 or 7. The client draws stage s with its EXPLOSION(9 - s) tile: stage 8 is a tiny spark, the fireball is largest at stage 5, and stages 4 to 1 are a thinning scatter of sparks. Tank-hit debris and landing tank wreckage are logged at stage 8 every tick as they fly, so they appear as moving sparks |
-| 7-17 | Sound*            | x, y of the sound: build, farm, shoot, hit tank, hit tree, hit wall, mine lay, mine explode, explosion, big explosion, man die. None occur in the sample |
+| 7-17 | Sound*            | x, y of the sound: build, farm, shoot, hit tank, hit tree, hit wall, mine lay, mine explode, explosion, big explosion, man die. None occur in the sample; WinBolo 2.1 writes them |
 | 18   | MessageServer     | text                                                          |
 | 19   | MessageAll        | slot, text                                                    |
 | 20   | MessagePlayers    | slot, recipient, text. Logged once per recipient, the sender included, a few ticks apart |
@@ -121,7 +166,7 @@ with a in the high nibble and b in the low.
 | 25   | BaseSetOwner      | base, owner (0xff neutral), migrate flag                      |
 | 26   | BaseSetStock      | base, shells, mines, armour                                   |
 | 27   | PillSetOwner      | pill, owner (0xff neutral), migrate flag                      |
-| 28   | PillSetHealth     | nibble(pill, armour)                                          |
+| 28   | PillSetHealth     | nibble(pill, armour); in version 3, pill, armour              |
 | 29   | PillSetPlace      | pill, x, y                                                    |
 | 30   | PillSetInTank     | nibble(pill, in tank)                                         |
 | 31   | SaveMap           | slot (never written by the public source)                     |
@@ -222,6 +267,37 @@ when the other player voted; games ended by surrender: 47 = 2,3,1 and 48
 written by 2.03 according to the specification, although the viewer
 handles it if it appears.
 
+### WinBolo 2.1 events
+
+"Blob" is a length byte and that many binary bytes. A destination is a
+team (0 everyone, else 1-15) and a player (255 everyone); the viewer, as
+an observer, treats every line as public. Server ticks are 100 a second.
+
+| type | name             | payload                                    | what |
+|------|------------------|--------------------------------------------|------|
+| 53   | GameSettings     | blob                                       | every lobby setting, when the lobby opens, the round starts and a setting changes: view policies, decays, game type, AI, flags, time limit, lobby locks, smart pings, positional sound. The blob grows at its end: a byte past a shorter one reads as 0 |
+| 54   | Ping             | player, kind, x, y (2 bytes each)          | a smart ping; kind 0 standard, 1 caution, 2 assist me, 3 attack, 4 on my way, 5 bot command; x, y in world units, 256 to the square |
+| 55   | TankSetStock     | player, shells, mines, armour, trees       | a tank's stocks, when any changes |
+| 56   | TankSetModifiers | player, blob                               | a scenario's speed, acceleration, turn, reload, damage dealt and taken, each a percentage (0 the classic tank); a blob of 8 carries a speed past 255 as 2 more bytes |
+| 57   | EntityChange     | kind, index, on map, blob                  | kind 0 a pillbox (x, y, owner, armour, speed, in tank), 1 a base (x, y, owner, armour, shells, mines), 2 a start (x, y, direction) joins or leaves the map. An add past the end leaves the numbers it skips off the map |
+| 58   | EntityMasks      | pills, bases, starts (2 bytes each)        | after a snapshot: bit i set, item i is on the map |
+| 59   | ServerText       | team, player, text                         | a line a scenario sent; the server's own lines are still MessageServer |
+| 60   | GameTimeSet      | time (4 bytes, signed)                     | a scenario set the round's time left, in server ticks |
+| 61   | RuleSet          | rule (2 bytes), blob                       | a scenario changed rule `rule` of the server's rules table; the blob is the new value as an 8-byte big-endian double |
+| 62   | ScnPanel         | panel and script, team, player, list length (2 bytes), list | a scenario's panel: low nibble the panel (always 0), high nibble which script drew it; the list is drawing primitives, empty to clear |
+| 63   | ScnScore         | kind, target, score (4 bytes, signed), label | a scenario's score for a player (kind 0) or a team (1) |
+| 64   | ScnAnnounce      | team, player, time (2 bytes), text, then x, y if placed | a big line across the view for that many server ticks; empty text is the clear. x, y are 0-254 across and down the view |
+| 65   | ScnMarker        | id, kind, team, player, blob of x, y, player, colour | a map marker on a square (kind 0) or following a tank (1), or the clear (2) |
+| 66   | ScnHint          | player, verb                               | an order a scenario gave a bot; only its verb is recorded |
+| 67   | ServerTick       | tick (4 bytes)                             | the server's tick at this record; see the tick stream |
+| 68   | ScnStatus        | team, player, countdown end (4 bytes), text | a scenario's status line, with a countdown to a server tick (0xffffffff none); empty text is the clear |
+| 69   | VoiceEveryone    | on                                         | voice chat goes to every player rather than to allies alone |
+
+The viewer applies 57 and 58, puts 59 on the message wire with the
+server's other lines, and draws nothing else of these: pings, scores,
+panels, announcements and markers are what a scenario shows its
+players, not the world.
+
 ## Snapshots
 
 ```
@@ -239,10 +315,13 @@ players              16 records, each a length byte then:
                        mx, my, nibble(px, py), frame, on boat,
                        man mx, my, nibble(px, py), frame,
                        name (Pascal), location (Pascal, free text; the country code in version 2),
-                       ally count, ally slots
+                       ally count, ally slots,
+                       and from WinBolo 2.1: shells, mines, armour, trees
 ```
 
-The tank's frame is its direction, plus 16 when on a boat. The map's
+The tank's frame is its direction, plus 16 when on a boat. WinBolo 2.1
+can hold a seat before its tank is built (a scenario keeping seats for
+its bots, say); such a record is in use with nothing after the flag. The map's
 rows use the nibble run-length code of `bolo_map.c`: each run is a length
 byte (the whole run's size), y, start x, end x, then nibbles, high first,
 where a nibble 0-7 introduces that many plus one literal terrain nibbles
@@ -252,6 +331,13 @@ covers are deep sea.
 Terrain codes (map file and MapChange alike): 0 building, 1 river,
 2 swamp, 3 crater, 4 road, 5 forest, 6 rubble, 7 grass, 8 shot building,
 9 boat, 10-15 the mined forms of 2-7, 255 deep sea.
+
+## scripts.json
+
+WinBolo 2.1 adds this member when the round ran scenario scripts: JSON
+naming the map, whether mods were on, the rules and regions the round
+opened with, and each script with its manifest. The parser returns it as
+`scripts`.
 
 ## attribution.trk
 
@@ -273,7 +359,7 @@ records              type byte, 4-byte tick, then a fixed payload by type
 
 Record ticks are the server's internal 10 ms steps, twice the log's rate,
 counted from the start of the round, and the offset is not stored. With
-the tick after each snapshot dropped (above) they match the log's ticks
+each snapshot's split tick counted once (above) they match the log's ticks
 exactly: from LobbyExit in 2.0.3 logs, where the lobby countdown precedes
 it, and five seconds after LobbyExit in 2.0.2 logs, which write LobbyExit
 as the countdown starts and hold the tanks placed but still until it

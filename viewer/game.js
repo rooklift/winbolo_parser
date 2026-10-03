@@ -134,7 +134,7 @@ function track_shells(tr, tick, tick_events, state, effects, fall_segments, soun
 			if (p.tank.in_world || p.tank.died_at === tick) consider(world_x(p.tank), world_y(p.tank), p.slot);
 		}
 		for (let p of state.pills) {
-			if (!p.in_tank && p.armour > 0) consider(p.x + 0.5, p.y + 0.5, PILL_OWNER);
+			if (p.on_map && !p.in_tank && p.armour > 0) consider(p.x + 0.5, p.y + 0.5, PILL_OWNER);
 		}
 		f.owner = owner; f.age = 0;
 		next.push({ x, y, dir: f.dir, age: 0, owner, born: tick, last_tick: tick });
@@ -238,7 +238,7 @@ function terrain_sounds(tick, tick_events, sounds, hits) {
 function burst_cause(burst, state, bx, by, owner) {
 	if (burst.px === 0 && burst.py === 0) {
 		let sx = Math.floor(bx), sy = Math.floor(by);
-		return { cause: state.pills.some(p => !p.in_tank && p.x === sx && p.y === sy) ? "pill" : "terrain" };
+		return { cause: state.pills.some(p => p.on_map && !p.in_tank && p.x === sx && p.y === sy) ? "pill" : "terrain" };
 	}
 	for (let p of state.players) {
 		let t = p.tank;
@@ -303,16 +303,20 @@ function state_from_snapshot(s, previous) {
 	st.tick = s.tick - 1;
 	st.grid = WinBoloLog.snapshot_grid(s).slice();
 	st.grid_version = s.tick;
-	st.pills = s.pills.map(p => ({ x: p.x, y: p.y, armour: p.armour, owner: p.owner, in_tank: p.in_tank, speed: p.speed }));
-	st.bases = s.bases.map(b => ({ x: b.x, y: b.y, owner: b.owner, armour: b.armour, shells: b.shells, mines: b.mines }));
-	st.starts = s.starts.map(x => ({ x: x.x, y: x.y, dir: x.dir }));
+	/* every item a snapshot lists is on the map until an EntityMasks after
+	 * it says otherwise (WinBolo 2.1, whose scenarios add and remove them) */
+	st.pills = s.pills.map(p => ({ x: p.x, y: p.y, armour: p.armour, owner: p.owner, in_tank: p.in_tank, speed: p.speed, on_map: true }));
+	st.bases = s.bases.map(b => ({ x: b.x, y: b.y, owner: b.owner, armour: b.armour, shells: b.shells, mines: b.mines, on_map: true }));
+	st.starts = s.starts.map(x => ({ x: x.x, y: x.y, dir: x.dir, on_map: true }));
 	st.start_delay = s.start_delay;
 	st.game_length = s.game_length;
 	for (let i = 0; i < MAX_TANKS; i++) {
 		let p = s.players[i];
 		let pl = st.players[i];
 		let prev = previous ? previous.players[i] : null;
-		if (!p || !p.in_use) {
+		/* a seat held before its tank is built (WinBolo 2.1) is in use
+		 * with nothing else to say: no tank yet, so no player to show */
+		if (!p || !p.in_use || !p.tank) {
 			if (prev) { pl.name = prev.name; pl.location = prev.location; pl.quit = prev.quit; }
 			continue;
 		}
@@ -478,11 +482,11 @@ function apply_event(s, e, effects, chat, sounds) {
 		case EV.Shell:
 			s.shells.push(e);
 			break;
-		case EV.SoundShoot: case EV.SoundHitTank: case EV.SoundHitTree: case EV.SoundHitWall:
-		case EV.SoundMineExplode: case EV.SoundExplosion: case EV.SoundBigExplosion: case EV.SoundManDie:
-		case EV.SoundBuild: case EV.SoundFarm: case EV.SoundMineLay:
-			if (effects) effects.push({ tick: e.tick, type: e.name, x: e.x, y: e.y });
-			break;
+		/* The Sound events (from WinBolo 2.1, which logs gunfire, farming,
+		 * building, mines and deaths) are not drawn: each says again what the
+		 * viewer already draws from the rest of the log. Nor are they heard;
+		 * the sounds are worked out from the same events, which cover old
+		 * logs too. */
 		case EV.MessageServer:
 			if (chat) chat.push({ tick: e.tick, kind: "server", text: e.text });
 			break;
@@ -559,6 +563,28 @@ function apply_event(s, e, effects, chat, sounds) {
 		}
 		case EV.PillSetInTank:
 			if (s.pills[e.pill]) s.pills[e.pill].in_tank = e.in_tank;
+			break;
+		case EV.EntityChange: {
+			/* a scenario put a pillbox, base or start on the map or took one
+			 * off; a removed item keeps its number, and its record */
+			let list = e.kind === WinBoloLog.ENTITY_PILL ? s.pills : e.kind === WinBoloLog.ENTITY_BASE ? s.bases : e.kind === WinBoloLog.ENTITY_START ? s.starts : null;
+			if (!list || !e.record) break;
+			/* an add past the end leaves any numbers it skips off the map */
+			while (list.length < e.index) list.push({ ...e.record, on_map: false });
+			list[e.index] = { ...e.record, on_map: e.on_map };
+			if (e.kind === WinBoloLog.ENTITY_BASE) s.grid_version++; /* a base square draws as road */
+			break;
+		}
+		case EV.EntityMasks:
+			/* written after a snapshot: which of its items are on the map */
+			s.pills.forEach((p, i) => { p.on_map = (e.pills >> i & 1) !== 0; });
+			s.bases.forEach((b, i) => { b.on_map = (e.bases >> i & 1) !== 0; });
+			s.starts.forEach((x, i) => { x.on_map = (e.starts >> i & 1) !== 0; });
+			s.grid_version++;
+			break;
+		case EV.ServerText:
+			/* a line a scenario sent: to everyone, a team or one player */
+			if (chat) chat.push({ tick: e.tick, kind: "server", text: e.text });
 			break;
 		case EV.SaveMap:
 			push_chat("save_map");
@@ -767,7 +793,7 @@ function game_start_tick(log) {
 	/* the populated snapshot the server writes a tick after the marker;
 	 * a later one is a periodic snapshot, not the start */
 	for (let s of log.snapshots) {
-		if (s.tick >= marker && s.tick <= marker + 2 && s.players.some(p => p.in_use)) return s.tick;
+		if (s.tick >= marker && s.tick <= marker + 2 && s.players.some(p => p.in_use && p.tank)) return s.tick;
 	}
 	for (let e of log.events) {
 		if (e.type === EV.PlayerLocation && e.in_world && e.tick >= marker) return e.tick;

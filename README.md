@@ -7,8 +7,9 @@ WinBolo (John Morrison, 1998-2008, GPL v2) is the Windows reimplementation
 of Bolo. Its server can log a game; the log is a zip holding a tick stream
 of every tank, man and shell position, every terrain change, every pill
 and base change, and the chat. The format is that of the GPL source's
-`log.c`, with the additions of the current, closed-source servers found by
-inspection. It is written up in [FORMAT.md](docs/FORMAT.md).
+`log.c`, with the additions of the 2.0 servers found by inspection and
+those of WinBolo 2.1 from its own source. It is written up in
+[FORMAT.md](docs/FORMAT.md).
 
 Sibling of the [Ancient Bolo Parser](https://github.com/rooklift/ancient_bolo_parser),
 which does the same for classic Mac Bolo logs, a far more troublesome format.
@@ -34,7 +35,7 @@ const zip = require("./src/zip.js");
 const inflate = require("./src/inflate.js");
 const WinBoloLog = require("./src/parse.js");
 
-let { log, attribution } = await WinBoloLog.open_archive(bytes, zip, inflate);
+let { log, attribution, scripts } = await WinBoloLog.open_archive(bytes, zip, inflate);
 log.header;      // map name, game type, WinBolo version, creation time, ...
 log.events;      // [{ tick, type, name, ...fields }] in order; 50 ticks per second
 log.snapshots;   // [{ tick, pills, bases, starts, players, runs }]; WinBoloLog.snapshot_grid(s) decodes the map
@@ -134,14 +135,17 @@ logs every moving object every tick. Shells are anonymous in the log,
 but the engine follows each one from its muzzle to its burst, so it
 knows who fired it and what it hit; a shell that falls at the end of its
 range lands with the Mac viewer's quiet splash rather than a fireball
-(FORMAT.md has the method). Every event type of the 2.03 format is
-decoded, and `attribution.trk` is read into named records, though the
-viewer draws nothing from it yet; an event type from a later WinBolo is
-skipped by its length.
+(FORMAT.md has the method). Every event type of the 2.03 format and of
+WinBolo 2.1 is decoded, and `attribution.trk` and 2.1's `scripts.json`
+are read, though the viewer draws nothing from them yet; an event type
+from a later WinBolo is skipped by its length. Of 2.1's additions the
+viewer shows the pillboxes, bases and starts a scenario adds and removes,
+and a scenario's server lines on the wire; its pings, scores, panels,
+announcements and markers are decoded but not drawn.
 
-Sound is inferred. The format has Sound events, but no server writes
-them (the sample holds none), so the viewer works the sounds out from
-what the log does state, on the rules of WinBolo's own source: each
+Sound is inferred. The format has Sound events, but no server before
+2.1 writes them (the sample holds none), so the viewer works the sounds
+out from what the log does state, on the rules of WinBolo's own source: each
 shell the tracker traces to a muzzle is a shot, and each burst it
 explains is a hit on a tank, a pillbox, a building or a tree; the
 terrain changes are the builders farming and building, mines laid and

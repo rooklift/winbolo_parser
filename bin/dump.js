@@ -32,7 +32,7 @@ function describe(e) {
 	for (let k in e) {
 		if (k === "tick" || k === "type" || k === "name") continue;
 		let v = e[k];
-		parts.push(`${k}=${typeof v === "string" ? JSON.stringify(v) : Array.isArray(v) ? v.join(",") : v}`);
+		parts.push(`${k}=${typeof v === "string" ? JSON.stringify(v) : Array.isArray(v) ? v.join(",") : v && typeof v === "object" ? JSON.stringify(v) : v}`);
 	}
 	return parts.join(" ");
 }
@@ -43,7 +43,7 @@ async function main() {
 	let mode = args.find(a => a.startsWith("--")) || "--summary";
 	if (!file) usage();
 	let bytes = new Uint8Array(fs.readFileSync(file));
-	let { log, attribution, members } = await WinBoloLog.open_archive(bytes, zip, inflate);
+	let { log, attribution, scripts, members } = await WinBoloLog.open_archive(bytes, zip, inflate);
 	let h = log.header;
 
 	if (mode === "--json") {
@@ -88,6 +88,7 @@ async function main() {
 				case "ChangeName": line = `⇄ ${who(e.player)} is now ${e.player_name}`; names[e.player] = e.player_name; break;
 				case "PlayerQuit": line = `✝ ${who(e.player)} left the game`; break;
 				case "MessageServer": line = `server: ${e.text}`; break;
+				case "ServerText": line = `server${e.team ? " (to team " + e.team + ")" : e.to !== WinBoloLog.NEUTRAL ? " (to " + who(e.to) + ")" : ""}: ${e.text}`; break;
 				case "MessageAll": line = `${who(e.player)}: ${e.text}`; break;
 				case "MessagePlayers": line = `${who(e.player)} (to ${who(e.to)}): ${e.text}`; break;
 				case "KillPlayer": line = e.killer === e.player ? `${who(e.player)} drowned` : `${e.killer === WinBoloLog.NEUTRAL ? "a pillbox" : who(e.killer)} killed ${who(e.player)}`; break;
@@ -118,6 +119,9 @@ async function main() {
 	}
 	for (let w of log.warnings) console.log(`warning: ${w}`);
 	if (attribution) console.log(`attribution.trk: ${attribution.records.length} records${attribution.complete ? "" : " (count mismatch)"}`);
+	if (scripts && Array.isArray(scripts.scripts)) {
+		console.log(`scripts.json: ${scripts.scripts.map(s => `${s.file} (${s.kind})`).join(", ") || "no scripts"}`);
+	}
 }
 
 main().catch(err => {

@@ -383,6 +383,140 @@ function test_log_versions() {
 	check("interleaved v2 and v3 parsing keeps each file's version", true);
 }
 
+/* A WinBolo 2.1 snapshot: two pills, a base, a start; Alice with her
+ * stocks on the end of her block; slot 1 held before its tank is built. */
+function snapshot_21() {
+	let pills = [2, 101, 102, 15, 0xff, 50, 0, 0, 0, 0, 103, 101, 15, 0xff, 50, 0, 0, 0, 0];
+	let bases = [1, 102, 100, 0xff, 90, 90, 90, 0, 0, 0, 0];
+	let starts = [1, 100, 100, 4];
+	let players = [];
+	for (let i = 0; i < 16; i++) {
+		if (i === 0) {
+			let rec = [0, 1, 100, 100, 0x88, 4, 0, 0, 0, 0, 0, ...pstr("Alice"), ...pstr("GB"), 0, 40, 3, 30, 7];
+			players.push(rec.length, ...rec);
+		} else {
+			players.push(2, i, i === 1 ? 1 : 0);
+		}
+	}
+	return [5, ...be32(0), ...be32(0xffffffff), pills.length, ...pills, bases.length, ...bases, starts.length, ...starts, ...runs(), ...players];
+}
+
+function synthetic_log_21() {
+	let header = [...Buffer.from("WBOLOMOV"), 3, ...pstr("Test Map"), 4, 0, 0, 0, 16, 2, 1, 0,
+		0, 0, 0, 0, 0, 0, ...be32(1800000000), ...Buffer.from("0123456789abcdef0123456789abcdef")];
+	let settings = [121, 0, 30, 0, 45, 2, 88, 4, 1, 139, 0, 90, 0, 5, 0, 1, 2];
+	let double = v => { let b = Buffer.alloc(8); b.writeDoubleBE(v); return [...b]; };
+	let body = [
+		...snapshot_21(),
+		...block([                                                               /* tick 0 */
+			event(53, [settings.length, ...settings]),
+			event(53, [14, ...settings.slice(0, 14)]),                           /* an older writer's shorter blob */
+			event(54, [0, 3, ...be16(100 * 256 + 128), ...be16(101 * 256 + 64)]),
+			event(55, [0, 40, 3, 30, 7]),
+			event(1, [2, 0x46, 0x52, 0, 0, 4, 0x5a, 0x6f, 0xc3, 0xab]),          /* Zoë joins, in UTF-8 */
+			event(21, [2, 3, 0x5a, 0x6f, 0xeb]),                                 /* and renames to Zoë, in cp1252 */
+			event(67, be32(0)),
+		]),
+		1, 124,                                                                  /* ticks 1-124 */
+		...block([                                                               /* tick 125, flushed ahead of the snapshot */
+			event(56, [0, 6, 150, 0, 120, 0, 0, 0]),
+			event(56, [1, 8, 255, 0, 0, 0, 0, 0, ...be16(900)]),
+			event(61, [...be16(108), 8, ...double(0.25)]),
+			event(62, [0x10, 0, 255, ...be16(3), 1, 2, 3]),
+			event(63, [1, 2, ...be32(-5 >>> 0), ...pstr("goals")]),
+			event(64, [0, 255, ...be16(300), ...pstr("Go!"), 127, 255]),
+			event(64, [0, 255, ...be16(0), ...pstr("")]),
+			event(65, [1, 0, 0, 255, 4, 100, 101, 0, 5]),
+			event(66, [1, ...pstr("defend")]),
+			event(68, [0, 255, ...be32(3402), ...pstr("Wave 1/3")]),
+			event(68, [0, 255, ...be32(0xffffffff), ...pstr("")]),
+			event(69, [1]),
+			event(60, be32(60000)),
+		]),
+		...snapshot_21(),
+		...block([event(58, [...be16(2), ...be16(1), ...be16(1)])]),             /* pill 0 is off the map; takes no tick */
+		...block([event(67, be32(250))]),                                        /* still tick 125: 250 server ticks on */
+		...block([event(57, [1, 2, 1, 6, 104, 100, 0, 10, 20, 30]),              /* tick 126: base 2 joins, leaving 1 off */
+			event(59, [1, 255, ...pstr("Team one, hold")])]),
+		...block([event(3, [0, 100, 100, 0x98, 0x40])]),                         /* tick 127: the previous tick's block... */
+		...snapshot_21(),
+		...block([event(67, be32(256))]),                                        /* ...as the anchor shows: this is tick 128 */
+		1, 10,                                                                   /* ticks 129-138 */
+		...snapshot_21(),
+		1, 5,                                                                    /* a quiet snapshot: all five ticks pass, 139-143 */
+		...block([event(67, be32(288))]),                                        /* tick 144 */
+		...block([event(3, [0, 100, 100, 0xa8, 0x40])]),                         /* tick 145, flushed */
+		...snapshot_21(),
+		1, 1,                                                                    /* no tick: the rest of 145 */
+		...block([event(3, [0, 100, 100, 0xb8, 0x40])]),                         /* tick 146 */
+		0, 0,
+	];
+	return Uint8Array.from([...header, ...body]);
+}
+
+async function test_winbolo_21() {
+	let scripts = { version: 1, map: "Test Map.map", scripts: [] };
+	let archive = make_zip([["log.dat", synthetic_log_21()], ["scripts.json", Buffer.from(JSON.stringify(scripts))]]);
+	let { log, scripts: read_scripts } = await WinBoloLog.open_archive(archive, zip, inflate);
+	check("2.1: parses without warnings", log.finished && log.warnings.length === 0, log.warnings.join("; "));
+	check("2.1: scripts.json is read", JSON.stringify(read_scripts) === JSON.stringify(scripts));
+	check("2.1: scripted game type", WinBoloLog.GAME_TYPES[log.header.game_type] === "Scripted");
+	let s = log.snapshots[0];
+	check("2.1: snapshot stocks", JSON.stringify(s.players[0].stocks) === JSON.stringify({ shells: 40, mines: 3, armour: 30, trees: 7 }));
+	check("2.1: a seat held before its tank is built", s.players[1].in_use && !s.players[1].tank);
+	let ev = name => log.events.filter(e => e.name === name);
+	let g = ev("GameSettings")[0];
+	check("2.1: game settings", g.pill_view === "key" && g.base_view === "decay" && g.ally_view === "off" && g.classic_mode && !g.allies_in_trees &&
+		g.pill_view_decay === 30 && g.base_view_decay === 45 && g.ally_view_decay === 600 && g.game_type === 4 && g.ai === 1 &&
+		g.hidden_mines && g.time_limit && !g.auto_lock && g.ranked && g.line_of_sight && g.time_minutes === 90 &&
+		g.lobby_locks === 0x10005 && !g.smart_pings_off && g.positional_sound, JSON.stringify(g));
+	let old = ev("GameSettings")[1];
+	check("2.1: a shorter settings blob reads the missing fields as zero", old.time_minutes === 90 && old.lobby_locks === 5 && !old.positional_sound, JSON.stringify(old));
+	let ping = ev("Ping")[0];
+	check("2.1: ping", ping.player === 0 && ping.kind === 3 && ping.mx === 100 && ping.my === 101 && ping.world_x === 25728, JSON.stringify(ping));
+	check("2.1: tank stocks", JSON.stringify(ev("TankSetStock")[0]) === JSON.stringify({ tick: 0, type: 55, name: "TankSetStock", player: 0, shells: 40, mines: 3, armour: 30, trees: 7 }));
+	check("2.1: UTF-8 and cp1252 names", ev("PlayerJoined")[0].player_name === "Zoë" && ev("ChangeName")[0].player_name === "Zoë");
+	let [mods, fast] = ev("TankSetModifiers");
+	check("2.1: modifiers", mods.speed === 150 && mods.turn === 120 && mods.accel === 0 && fast.player === 1 && fast.speed === 900, JSON.stringify(fast));
+	check("2.1: rule", ev("RuleSet")[0].rule === 108 && ev("RuleSet")[0].value === 0.25);
+	let panel = ev("ScnPanel")[0];
+	check("2.1: panel", panel.panel === 0 && panel.script === 1 && panel.to === 255 && panel.list.join(",") === "1,2,3");
+	let score = ev("ScnScore")[0];
+	check("2.1: score", score.kind === 1 && score.target === 2 && score.score === -5 && score.label === "goals");
+	let [announce, clear] = ev("ScnAnnounce");
+	check("2.1: announcement", announce.time === 300 && announce.text === "Go!" && announce.x === 127 && announce.y === 254 && clear.text === "" && clear.x === undefined);
+	let marker = ev("ScnMarker")[0];
+	check("2.1: marker", marker.id === 1 && marker.kind === 0 && marker.x === 100 && marker.y === 101 && marker.colour === 5);
+	check("2.1: hint", ev("ScnHint")[0].player === 1 && ev("ScnHint")[0].verb === "defend");
+	let [status, no_status] = ev("ScnStatus");
+	check("2.1: status", status.countdown_to === 3402 && status.text === "Wave 1/3" && no_status.countdown_to === null && no_status.text === "");
+	check("2.1: voice and game time", ev("VoiceEveryone")[0].on && ev("GameTimeSet")[0].time === 60000);
+	let change = ev("EntityChange")[0];
+	check("2.1: entity change", change.kind === WinBoloLog.ENTITY_BASE && change.base === 2 && change.on_map && change.record.shells === 20, JSON.stringify(change));
+	let masks = ev("EntityMasks")[0];
+	check("2.1: entity masks", masks.pills === 2 && masks.bases === 1 && masks.starts === 1);
+	check("2.1: ServerText", ev("ServerText")[0].team === 1 && ev("ServerText")[0].to === 255 && ev("ServerText")[0].text === "Team one, hold");
+
+	/* the ticks: a flushed block and the block after its snapshot share one */
+	let anchors = ev("ServerTick").map(e => `${e.server_tick}@${e.tick}`).join(",");
+	check("2.1: each server tick is twice the log's", anchors === "0@0,250@125,256@128,288@144", anchors);
+	check("2.1: the masks after a snapshot take no tick", masks.tick === 125 && log.snapshots[1].tick === 126, `${masks.tick} ${log.snapshots[1].tick}`);
+	check("2.1: ticks never go back", log.events.every((e, i) => i === 0 || e.tick >= log.events[i - 1].tick));
+	let moves = ev("PlayerLocation").map(e => e.tick).join(",");
+	check("2.1: a quiet snapshot takes nothing off the ticks after it; a flushed one does", moves === "127,145,146" && log.ticks === 147, `${moves} ${log.ticks}`);
+
+	let game = WinBoloGame.build(log);
+	check("2.1: the held seat is not a player", !game.final.players[1].in_use);
+	let at = t => WinBoloGame.state_at(game, t).state;
+	check("2.1: everything is on the map before the masks", at(124).pills.every(p => p.on_map));
+	let masked = at(126);
+	check("2.1: the masks take pill 0 off the map", !masked.pills[0].on_map && masked.pills[1].on_map && masked.bases[0].on_map);
+	check("2.1: an added base past the end leaves the gap off the map", masked.bases.length === 3 && !masked.bases[1].on_map && masked.bases[2].on_map && masked.bases[2].x === 104 && masked.bases[2].shells === 20, JSON.stringify(masked.bases));
+	check("2.1: a snapshot with no masks after it has everything on the map", at(130).pills.every(p => p.on_map));
+	let line = game.chat.find(m => m.kind === "server");
+	check("2.1: a scenario's server line is on the wire", line && line.text === "Team one, hold" && line.tick === 126);
+}
+
 function test_viewer_build() {
 	let committed = fs.readFileSync(path.join(root, "viewer", "logparse.js"), "utf8").replace(/\r\n/g, "\n");
 	check("viewer/logparse.js is up to date (node tools/build-viewer-parser.js)", committed === build());
@@ -415,6 +549,7 @@ if (require.main === module) (async () => {
 	await test_synthetic();
 	test_base_capture_stock();
 	test_log_versions();
+	await test_winbolo_21();
 	test_viewer_build();
 	await test_sample();
 	console.log(failures ? `${failures} FAILED` : "all passed");
