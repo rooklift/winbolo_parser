@@ -256,7 +256,7 @@ function parse_snapshot(bytes, p, tick) {
 	s.bases = [];
 	for (let i = 0, q = 1; i < table[0] && q + 10 <= table.length; i++, q += 10) {
 		s.bases.push({ x: table[q], y: table[q + 1], owner: table[q + 2], armour: table[q + 3], shells: table[q + 4],
-			mines: table[q + 5], refuel_time: table[q + 6], base_time: table[q + 7] | (table[q + 8] << 8) /* little-endian, alone in the log */, just_stopped: table[q + 9] });
+			mines: table[q + 5], refuel_time: table[q + 6], base_time: table[q + 7] | (table[q + 8] << 8) /* little-endian, like the stream's long counts */, just_stopped: table[q + 9] });
 	}
 
 	n = bytes[p++];
@@ -683,8 +683,10 @@ function* parse_steps(bytes) {
 			last_was_block = false;
 		} else if (rec === REC_NOEVENTS_LONG) {
 			if (p + 3 > bytes.length) break;
-			/* little-endian, alone among the stream's counts */
-			tick += idle(bytes[p + 1] | (bytes[p + 2] << 8));
+			/* little-endian, as is the long event count below: log.c takes
+			 * the bytes of htons(count) by shifting, which undoes the htons
+			 * on the little-endian hosts every server runs on */
+			tick += idle(le16(bytes, p + 1));
 			p += 3;
 			after_snapshot = false;
 			last_was_block = false;
@@ -696,7 +698,7 @@ function* parse_steps(bytes) {
 				p += 2;
 			} else {
 				if (p + 3 > bytes.length) break;
-				count = be16(bytes, p + 1);
+				count = le16(bytes, p + 1); /* little-endian, as above */
 				p += 3;
 			}
 			/* the block's extent and types first: which tick it takes
