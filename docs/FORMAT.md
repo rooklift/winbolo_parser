@@ -60,7 +60,7 @@ records, each starting with a type byte:
 | 1    | no events             | 1 byte: that many ticks passed with nothing to log   |
 | 2    | no events, long       | 2 bytes, **little-endian**: as above, 256 or more ticks |
 | 3    | events                | 1 byte: the number of events in this tick, then them |
-| 4    | events, long          | 2 bytes: as above, 256 or more events                |
+| 4    | events, long          | 2 bytes, **little-endian**: as above, 256 or more events |
 | 5    | snapshot              | the full game state, below; takes no tick            |
 
 An events record is one tick. A no-events record is that many ticks. A
@@ -69,12 +69,17 @@ it. The server writes a snapshot at the start and then every 125 ticks
 (2.5 s; 600 in the public source), skipping the write when nothing has
 happened since the last one.
 
-The long no-events count is little-endian, the one count in the stream
-that is (the 2.03 specification says big-endian; the bytes say otherwise:
-read little-endian every such count in three logs is 256 or more, as a
-writer that uses the short record up to 255 produces, and read big-endian
-they are noise). Reading it big-endian turns a five-second wait into
-minutes.
+The two long counts are little-endian, unlike every other number in the
+stream. The 2.03 specification and WinBolo 2.1's own replay-format.md say
+big-endian, but `log.c` takes the bytes of `htons(count)` by shifting,
+which undoes the `htons` on the little-endian hosts every server runs on
+(WinBolo's viewer reads them back with the mirror-image mistake, so it
+agrees). The bytes confirm it for the no-events count: read
+little-endian, every such count in three logs is 256 or more, as a
+writer that uses the short record up to 255 produces, and read
+big-endian they are noise. Reading it big-endian turns a five-second
+wait into minutes. No replay seen has a long events record (the most
+events in one tick is 76), so the events count rests on the source.
 
 **A snapshot splits the tick it is written in.** The server writes the
 periodic snapshot partway through a tick, after that tick's positions and
@@ -357,7 +362,7 @@ pills                length byte, then: count, and per pill
                        x, y, armour, owner, speed, in tank, reload, just seen, cool down
 bases                length byte, then: count, and per base
                        x, y, owner, armour, shells, mines, refuel time, base time (2 bytes,
-                       little-endian: the one such field in the log), just stopped
+                       little-endian, like the stream's long counts), just stopped
 starts               length byte, then: count, and per start x, y, direction
 map                  run-length rows, as in a BMAPBOLO map file, ending with the 04 FF FF FF run
 players              16 records, each a length byte then:

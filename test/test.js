@@ -360,6 +360,18 @@ function test_log_versions() {
 		assert.ok(log.finished && log.warnings.length === 0);
 		check("version " + version + " pill health and following event decode", true);
 	}
+	/* A tick of 300 events takes the long events record, whose count is
+	 * little-endian (2C 01): read big-endian it would claim 11265 events
+	 * and swallow the rest of the file. */
+	let shells = Array.from({ length: 300 }, (_, i) => event(6, [100, 100, 0x88, 9 + (i & 15)]));
+	let long = WinBoloLog.parse_log(Uint8Array.from([...header, ...snapshot(), 4, 300 & 255, 300 >> 8, ...shells.flat(),
+		...block([event(2, [7])]), 0, 0]));
+	assert.ok(long.finished && long.warnings.length === 0, long.warnings.join("; "));
+	assert.strictEqual(long.events.length, 301);
+	assert.ok(long.events.slice(0, 300).every(e => e.name === "Shell" && e.tick === 0));
+	assert.strictEqual(long.events[300].name, "PlayerQuit");
+	assert.strictEqual(long.events[300].tick, 1);
+	check("a long events record's count is little-endian", true);
 	let short = WinBoloLog.parse_log(fixture(3, [5]));
 	assert.match(short.warnings[0], /PillSetHealth payload is 1 bytes, expected at least 2/);
 	assert.deepStrictEqual(short.events[0].raw, [5]);
