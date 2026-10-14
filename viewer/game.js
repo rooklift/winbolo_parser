@@ -328,9 +328,11 @@ function fresh_player(slot) {
 	};
 }
 
-function initial_state() {
-	let grid = new Uint8Array(MAP_SIZE * MAP_SIZE);
-	grid.fill(DEEP_SEA);
+function initial_state(grid = null) {
+	if (!grid) {
+		grid = new Uint8Array(MAP_SIZE * MAP_SIZE);
+		grid.fill(DEEP_SEA);
+	}
 	return {
 		tick: -1, grid, grid_version: 0, pills: [], bases: [], starts: [],
 		players: Array.from({ length: MAX_TANKS }, (_, i) => fresh_player(i)),
@@ -340,11 +342,12 @@ function initial_state() {
 
 /* The world as a snapshot records it. Names survive from the previous
  * state where the snapshot has none (a slot not in use keeps its label in
- * the sidebar until reused), so the previous state is passed along. */
-function state_from_snapshot(s, previous) {
-	let st = initial_state();
+ * the sidebar until reused), so the previous state is passed along. The
+ * snapshot's terrain may be passed already decoded, in a grid the new
+ * state then owns. */
+function state_from_snapshot(s, previous, grid = null) {
+	let st = initial_state(grid || WinBoloLog.snapshot_grid(s));
 	st.tick = s.tick - 1;
-	st.grid = WinBoloLog.snapshot_grid(s).slice();
 	st.grid_version = s.tick;
 	/* every item a snapshot lists is on the map until an EntityMasks after
 	 * it says otherwise (WinBolo 2.1, whose scenarios add and remove them) */
@@ -721,6 +724,12 @@ function apply_event(s, e, effects, chat, sounds) {
 
 /* ---------- building a game ---------- */
 
+function same_bytes(a, b) {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+	return true;
+}
+
 /* Generator: yields progress in [0, 1], returns the game. One pass over
  * the events collects the message wire, the effects and the final state;
  * seeking then works from the snapshots. */
@@ -740,8 +749,20 @@ function* build_steps(log, scripts = null) {
 	let snapshot_labels = [];
 	let state = initial_state();
 	let next_snap = 0;
+	/* the last terrain decoded, and the runs it came from: a server writes
+	 * the same map snapshot after snapshot, so the decoding is reused while
+	 * the runs are unchanged, and copied into the one working grid, which
+	 * nothing else holds (a server left running for days writes hundreds of
+	 * thousands of snapshots, too many to give each a grid of its own) */
+	let last_runs = null, last_grid = null;
 	let adopt = () => {
-		state = state_from_snapshot(snaps[next_snap], state);
+		let s = snaps[next_snap];
+		if (!last_runs || !same_bytes(s.runs, last_runs)) {
+			last_runs = s.runs;
+			last_grid = WinBoloLog.snapshot_grid(s);
+		}
+		state.grid.set(last_grid);
+		state = state_from_snapshot(s, state, state.grid);
 		snapshot_labels.push(player_labels(state));
 		next_snap++;
 	};

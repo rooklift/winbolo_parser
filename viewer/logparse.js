@@ -454,10 +454,11 @@ function parse_snapshot(bytes, p, tick) {
 	return s;
 }
 
-/* A snapshot's terrain grid, decoded on first use and cached on it. */
+/* A snapshot's terrain grid, decoded afresh on each call and not cached
+ * on the snapshot: a server left running for days writes hundreds of
+ * thousands of snapshots, and 64K of grid apiece would not fit in memory. */
 function snapshot_grid(s) {
-	if (!s.grid) s.grid = decode_runs(s.runs);
-	return s.grid;
+	return decode_runs(s.runs);
 }
 
 /* ---------- events ---------- */
