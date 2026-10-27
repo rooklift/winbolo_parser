@@ -617,6 +617,9 @@ function test_winbolo_21_limits() {
 		"a hint verb past 63 bytes": event(66, [0, ...pstr("x".repeat(64))]),
 		"a status line to slot 16": event(68, [0, 16, ...be32(0xffffffff), ...pstr("")]),
 		"voice set to 2": event(69, [2]),
+		"lag for no slot": event(71, [16, 0, 50, 2]),
+		"an overrun record of version 0": event(72, Array(44).fill(0)),
+		"an overrun record cut short": event(72, [1, ...Array(42).fill(0)]),
 		"a settings blob longer than its event": event(53, [17, 0, 0]),
 	};
 	for (let [what, e] of Object.entries(refused)) {
@@ -625,6 +628,31 @@ function test_winbolo_21_limits() {
 		check(`2.1 limits: ${what} is kept raw`, log.warnings.length === 1 && bad.raw && Object.keys(bad).join() === "tick,type,name,raw" &&
 			next.name === "TankSetStock" && next.player === 1, log.warnings.join("; ") + " " + JSON.stringify(bad));
 	}
+}
+
+/* The records after 2.1: the round's map, a player's lag, and the
+ * server's timing with a part per bot. */
+function test_after_21_events() {
+	let header = Array.from(synthetic_log_21().subarray(0, WinBoloLog.parse_header(synthetic_log_21()).offset));
+	let parse = events => WinBoloLog.parse_log(Uint8Array.from([...header, ...snapshot_21(), ...block(events), 0, 0]));
+	let overrun = [1, 3, ...be32(3000), ...be16(1234), ...be16(56), ...be16(65535), ...be32(7), 20, ...be16(80), ...be16(75),
+		4, 2, ...be16(50), ...be16(30), ...be16(31), ...be16(400), ...be16(5), ...be16(6), ...be32(9), ...be32(6000), 3,
+		5, ...be16(12), ...be16(400), ...be32(9), ...be32(3000),
+		6, ...be16(10), ...be16(20), ...be32(0), ...be32(3000)];          /* claims three bots, holds two */
+	let log = parse([event(70, pstr("Everard Island")), event(71, [2, ...be16(312), 14, 99]), event(72, overrun)]);
+	check("after 2.1: parses without warnings", log.warnings.length === 0, log.warnings.join("; "));
+	let [map, lag, stats] = log.events;
+	check("after 2.1: map name", map.name === "MapName" && map.map_name === "Everard Island");
+	check("after 2.1: lag, a later field ignored", JSON.stringify(lag) === JSON.stringify({ tick: 0, type: 71, name: "PlayerLag", player: 2, rtt_ms: 312, rewind_ticks: 14 }), JSON.stringify(lag));
+	check("after 2.1: overrun stats", stats.version === 1 && stats.round_end && stats.has_bots && stats.round_frames === 3000 &&
+		stats.tick_last_ms === 123.4 && stats.tick_ewma_ms === 5.6 && stats.tick_peak_ms === 6553.5 && stats.over_budget === 7 &&
+		stats.budget_ms === 20 && stats.sim_last_ms === 8 && stats.sim_ewma_ms === 7.5 && stats.workers === 4 && stats.active_bots === 2 &&
+		stats.target_ms === 5 && stats.brain_last_ms === 3 && stats.brain_ewma_ms === 3.1 && stats.brain_peak_ms === 40 &&
+		stats.prep_last_ms === 0.5 && stats.prep_ewma_ms === 0.6 && stats.total_overruns === 9 && stats.total_thinks === 6000, JSON.stringify(stats));
+	check("after 2.1: overrun bots, as many as the record holds", JSON.stringify(stats.bots) === JSON.stringify([
+		{ player: 5, last_ms: 1.2, peak_ms: 40, overruns: 9, thinks: 3000 },
+		{ player: 6, last_ms: 1, peak_ms: 2, overruns: 0, thinks: 3000 },
+	]), JSON.stringify(stats.bots));
 }
 
 /* the synthetic log is shared with test-sound.js and test-rules.js, which require this file */
@@ -636,6 +664,7 @@ if (require.main === module) (async () => {
 	test_log_versions();
 	await test_winbolo_21();
 	test_winbolo_21_limits();
+	test_after_21_events();
 	test_viewer_build();
 	await test_sample();
 	console.log(failures ? `${failures} FAILED` : "all passed");

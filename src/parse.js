@@ -38,6 +38,8 @@ const EVENT = {
 	GameSettings: 53, Ping: 54, TankSetStock: 55, TankSetModifiers: 56, EntityChange: 57, EntityMasks: 58,
 	ServerText: 59, GameTimeSet: 60, RuleSet: 61, ScnPanel: 62, ScnScore: 63, ScnAnnounce: 64, ScnMarker: 65,
 	ScnHint: 66, ServerTick: 67, ScnStatus: 68, VoiceEveryone: 69,
+	/* after 2.1: the round's map, and the server's lag and timing */
+	MapName: 70, PlayerLag: 71, OverrunStats: 72,
 };
 /* Vote kinds, from the replays: 1 is a return to the lobby, 2 a surrender */
 const VOTE_KINDS = { 1: "return to the lobby", 2: "surrender" };
@@ -111,6 +113,9 @@ const PANEL_TEXT_MAX = 48;
 const SCORE_LABEL_MAX = 15;
 const LINE_MAX = 128;              /* an announcement or a status line */
 const HINT_VERB_MAX = 63;
+/* An OverrunStats record (overrun_record.h): a fixed part, then a part per bot */
+const OVERRUN_HEAD = 44;
+const OVERRUN_BOT = 13;
 
 /* ---------- byte helpers ---------- */
 
@@ -583,6 +588,31 @@ const DECODERS = {
 		if (b[0] > 1) return false;
 		e.on = b[0] !== 0;
 	},
+	/* the map the round is played on; the header's may be the last round's */
+	[EVENT.MapName]: (b, e) => { e.map_name = pstring(b, 0)[0]; },
+	/* later versions may add fields after these four */
+	[EVENT.PlayerLag]: (b, e) => {
+		if (b[0] >= MAX_TANKS) return false;
+		e.player = b[0]; e.rtt_ms = be16(b, 1);
+		e.rewind_ticks = b[3]; /* the lag compensation the server gave that player's last input */
+	},
+	[EVENT.OverrunStats]: (b, e) => {
+		if (b[0] === 0) return false;
+		let ms = p => be16(b, p) / 10; /* times are in tenths of a ms */
+		Object.assign(e, {
+			version: b[0], round_end: (b[1] & 1) !== 0, has_bots: (b[1] & 2) !== 0,
+			round_frames: be32(b, 2), tick_last_ms: ms(6), tick_ewma_ms: ms(8), tick_peak_ms: ms(10),
+			over_budget: be32(b, 12), budget_ms: b[16], sim_last_ms: ms(17), sim_ewma_ms: ms(19),
+			workers: b[21], active_bots: b[22], target_ms: ms(23), brain_last_ms: ms(25), brain_ewma_ms: ms(27),
+			brain_peak_ms: ms(29), prep_last_ms: ms(31), prep_ewma_ms: ms(33),
+			total_overruns: be32(b, 35), total_thinks: be32(b, 39), bots: [],
+		});
+		/* as many of the bot parts as the payload holds, as WinBolo reads them */
+		let count = Math.min(b[43], Math.floor((b.length - OVERRUN_HEAD) / OVERRUN_BOT), MAX_TANKS);
+		for (let i = 0, p = OVERRUN_HEAD; i < count; i++, p += OVERRUN_BOT) {
+			e.bots.push({ player: b[p], last_ms: ms(p + 1), peak_ms: ms(p + 3), overruns: be32(b, p + 5), thinks: be32(b, p + 9) });
+		}
+	},
 };
 for (let t = EVENT.SoundBuild; t <= EVENT.SoundManDie; t++) {
 	DECODERS[t] = (b, e) => { e.x = b[0]; e.y = b[1]; };
@@ -606,6 +636,7 @@ const MIN_PAYLOAD = {
 	[EVENT.EntityChange]: 4, [EVENT.EntityMasks]: 6, [EVENT.ServerText]: 3, [EVENT.GameTimeSet]: 4,
 	[EVENT.RuleSet]: 3, [EVENT.ScnPanel]: 5, [EVENT.ScnScore]: 7, [EVENT.ScnAnnounce]: 5, [EVENT.ScnMarker]: 5,
 	[EVENT.ScnHint]: 2, [EVENT.ServerTick]: 4, [EVENT.ScnStatus]: 7, [EVENT.VoiceEveryone]: 1,
+	[EVENT.MapName]: 1, [EVENT.PlayerLag]: 4, [EVENT.OverrunStats]: OVERRUN_HEAD,
 };
 for (let t = EVENT.SoundBuild; t <= EVENT.SoundManDie; t++) MIN_PAYLOAD[t] = 2;
 

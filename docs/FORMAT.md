@@ -115,7 +115,7 @@ record as a tick more, so its clock runs 2 to 3 % ahead of the game's.
   skipped, and the parser does so, keeping their payload raw.
 - **New event types** appear, for the lobby, votes and spectators. See
   below. A reader should skip any type it does not know by its length:
-  2.1 adds types 53 to 69, and more may follow.
+  2.1 adds types 53 to 69, later servers 70 to 72, and more may follow.
 
 ### Version 3 and WinBolo 2.1
 
@@ -323,8 +323,9 @@ one that does not parse (below); a score for team 0 or past 15, or a label
 past 15 bytes; an announcement or status line past 128 bytes; a marker id
 or colour past 15, a kind past 2, a placement not 4 bytes, or a follow
 marker on no slot; a hint verb past 63 bytes; a VoiceEveryone past 1; a
-GameSettings blob longer than its event. The event's own length still
-frames it, so the next event reads as ever.
+GameSettings blob longer than its event; and, from the servers after 2.1,
+lag for no slot or an OverrunStats of version 0. The event's own length
+still frames it, so the next event reads as ever.
 
 A RuleSet's rule is an index into WinBolo's `SIM_RULE_LIST`
 (`sim_rules_names.h`), whose order is the index and which only grows at
@@ -352,6 +353,17 @@ or 2 right. A text, name or timer at the large size is written at normal
 size and followed by a size mark, a rect of 2, 0, 0, 0, 0, 0, which the
 parser folds back in as size 2; a mark anywhere else refuses the list. A
 list holds at most 128 primitives, a mark counting as one.
+
+### Events after 2.1
+
+Servers built since 2.1 add three more, still in log version 3. The
+viewer draws none of them.
+
+| type | name         | payload | what |
+|------|--------------|---------|------|
+| 70   | MapName      | map name | the map the round is played on, when it starts. A log that opens in the lobby names the map then loaded in its header; the server's "Map changed to" lines follow every change after that, so the header and those lines already say the same |
+| 71   | PlayerLag    | player, RTT (2 bytes, ms), rewind | a player's round trip to the server and the lag compensation, in log ticks, its last input was given (at most 14). Written for each player at the round's start, at every snapshot, every second, and when either moves by 20 ms or 2 ticks; bots too, at about 0. Later fields may follow the four |
+| 72   | OverrunStats | 44 bytes, then 13 per bot | the server's frame timing and its bots' think times, every 30 s of the round and once more as the log closes (flag bit 0). Built by WinBolo's `overrunRecordEncode`; times are 2 bytes in tenths of a ms. The parser names each field and returns as many bot parts as the record holds |
 
 ## Snapshots
 
