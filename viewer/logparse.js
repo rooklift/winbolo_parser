@@ -201,8 +201,8 @@ const PING_KINDS = { 0: "standard", 1: "caution", 2: "assist me", 3: "attack", 4
 const ENTITY_PILL = 0, ENTITY_BASE = 1, ENTITY_START = 2;
 /* The rules a RuleSet names, by index: SIM_RULE_LIST in WinBolo's
  * sim_rules_names.h, whose order is the index. New rules go on the end,
- * so the list only grows; the last, man_bless_tile_terrain_speed, came
- * after 2.1 itself. */
+ * so the list only grows; the last, tank_hit_sets_off_mines, came after
+ * 2.1 itself. */
 const RULE_NAMES = [
 	"tank_reload_ticks", "tank_full_shells", "tank_full_mines", "tank_full_trees", "tank_full_armour",
 	"tank_death_ticks", "tank_water_ticks", "shell_damage", "mine_damage", "mine_damage_range",
@@ -239,7 +239,7 @@ const RULE_NAMES = [
 	"tree_weight_rubble", "tree_weight_building", "tree_weight_half_building", "tree_weight_crater",
 	"tree_weight_road", "tree_weight_mine", "pill_shell_cap", "pill_max_shells_at_tank",
 	"pill_base_defend_shape", "tank_slide_mac", "tank_slide_armour_bonus", "pill_aim_mac",
-	"tank_collision_mac", "tank_deep_sea_safe", "man_bless_tile_terrain_speed",
+	"tank_collision_mac", "tank_deep_sea_safe", "tank_hit_sets_off_mines",
 ];
 /* Visibility policies of the GameSettings view byte, two bits each */
 const VIEW_POLICIES = { 0: "always", 1: "key", 2: "decay", 3: "off" };

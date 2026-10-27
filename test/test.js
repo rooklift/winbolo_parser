@@ -589,7 +589,7 @@ function test_winbolo_21_limits() {
 	let rule = (index, value, n = 8) => { let b = Buffer.alloc(3 + n); b.writeUInt16BE(index); b[2] = n; if (n === 8) b.writeDoubleBE(value, 3); return [...b]; };
 	let rules = parse([event(61, rule(63, 64)), event(61, rule(155, 1)), event(61, rule(999, 2))]).events;
 	check("2.1 limits: rules are named by index", rules[0].rule_name === "shell_speed" && rules[0].value === 64 &&
-		rules[1].rule_name === "man_bless_tile_terrain_speed" && rules[2].rule === 999 && rules[2].rule_name === undefined && rules[2].value === 2);
+		rules[1].rule_name === "tank_hit_sets_off_mines" && rules[2].rule === 999 && rules[2].rule_name === undefined && rules[2].value === 2);
 
 	let refused = {
 		"a size mark after a small text": panel([3, 0, 0, 2, 0, 0, ...pstr("hi"), ...mark]),
