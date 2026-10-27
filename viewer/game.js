@@ -143,7 +143,7 @@ function track_shells(tr, tick, tick_events, state, effects, fall_segments, soun
 		track_used.add(i); flight_used.add(j);
 		let t = tr.tracks[i], f = flights[j];
 		t.x = world_x(f); t.y = world_y(f); t.age++; t.last_tick = tick;
-		f.owner = t.owner; f.age = t.age;
+		f.owner = t.owner; f.pill_owner = t.pill_owner; f.age = t.age;
 		next.push(t);
 	}
 	for (let i = 0; i < tr.tracks.length; i++) {
@@ -165,7 +165,9 @@ function track_shells(tr, tick, tick_events, state, effects, fall_segments, soun
 		let classic = step === SHELL_STEP && start_add === CLASSIC_SHELL_RULES.shell_start_add;
 		let offset = step * start_add;
 		let owner = null, best = classic ? MUZZLE_TOLERANCE : 0.25 + start_add * Math.SQRT2 / 256, muzzle = null;
-		let consider = (mx, my, who) => {
+		/* for a pillbox's shell, whose the pillbox was when it fired */
+		let pill_owner;
+		let consider = (mx, my, who, pill_who) => {
 			let dx = x - mx, dy = y - my;
 			let d = Math.hypot(dx, dy);
 			if (!classic) {
@@ -173,7 +175,7 @@ function track_shells(tr, tick, tick_events, state, effects, fall_segments, soun
 				let back = Math.max(offset, Math.min(offset + step, d));
 				d = Math.hypot(d - back, Math.max(0, across - d * DIRECTION_ERROR)) + across * 0.01;
 			}
-			if (d <= best && dx * hx + dy * hy >= -0.25) { best = d; owner = who; muzzle = { x: mx, y: my }; }
+			if (d <= best && dx * hx + dy * hy >= -0.25) { best = d; owner = who; pill_owner = pill_who; muzzle = { x: mx, y: my }; }
 		};
 		for (let p of state.players) {
 			/* a tank that died this tick keeps its last position (see
@@ -182,10 +184,10 @@ function track_shells(tr, tick, tick_events, state, effects, fall_segments, soun
 			if (p.tank.in_world || p.tank.died_at === tick) consider(world_x(p.tank), world_y(p.tank), p.slot);
 		}
 		for (let p of state.pills) {
-			if (p.on_map && !p.in_tank && p.armour > 0) consider(p.x + 0.5, p.y + 0.5, PILL_OWNER);
+			if (p.on_map && !p.in_tank && p.armour > 0) consider(p.x + 0.5, p.y + 0.5, PILL_OWNER, p.owner);
 		}
-		f.owner = owner; f.age = 0;
-		next.push({ x, y, dir: f.dir, step, age: 0, owner, born: tick, last_tick: tick });
+		f.owner = owner; f.pill_owner = pill_owner; f.age = 0;
+		next.push({ x, y, dir: f.dir, step, age: 0, owner, pill_owner, born: tick, last_tick: tick });
 		/* one gunshot per shell traced to a muzzle, at the muzzle; a shell
 		 * first seen away from every muzzle is a track lost and found again,
 		 * not a second shot */
@@ -256,7 +258,7 @@ function track_shells(tr, tick, tick_events, state, effects, fall_segments, soun
 		}
 		if (cause === "fall") {
 			if (effects) effects.push({ tick, type: "splash", x: bx, y: by });
-			if (fall_segments) fall_segments.push({ start: best.last_tick, end: tick, from_x: best.x, from_y: best.y, to_x: bx, to_y: by, dir: best.dir, owner: best.owner });
+			if (fall_segments) fall_segments.push({ start: best.last_tick, end: tick, from_x: best.x, from_y: best.y, to_x: bx, to_y: by, dir: best.dir, owner: best.owner, pill_owner: best.pill_owner });
 		}
 	}
 	if (tr.bursts.size > 64) {
@@ -341,7 +343,7 @@ function fall_positions_at(game, tick) {
 		let s = segments[i];
 		if (tick >= s.end) continue;
 		let amount = (tick - s.start) / (s.end - s.start);
-		out.push({ x: s.from_x + (s.to_x - s.from_x) * amount, y: s.from_y + (s.to_y - s.from_y) * amount, dir: s.dir, owner: s.owner });
+		out.push({ x: s.from_x + (s.to_x - s.from_x) * amount, y: s.from_y + (s.to_y - s.from_y) * amount, dir: s.dir, owner: s.owner, pill_owner: s.pill_owner });
 	}
 	return out;
 }

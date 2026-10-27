@@ -39,6 +39,7 @@ for (let t = 10; t <= 15; t++) RGB[t] = RGB[t - 8];
 const FRIENDLY_COLOR = "#58d858";
 const HOSTILE_COLOR = "#ff5d5d";
 const NEUTRAL_COLOR = "#f0b429";
+const NEUTRAL_SHOT_COLOR = "#ffe678";   /* paler, for a neutral pillbox's big shot */
 
 const OBJ_NATIVE_TILE = 16;
 const LGM_ANIMATION = ["lgm_frame0", "lgm_frame1", "lgm_frame2"];
@@ -973,20 +974,28 @@ function draw_shells() {
 			ctx.stroke();
 			continue;
 		}
-		draw_shell(cx, cy, sh.dir, sh.owner);
+		draw_shell(cx, cy, sh.dir, sh.owner, sh.pill_owner);
 	}
 }
 
 /* One shell in flight: the direction sprite, or a mark in its owner's
- * side colour (pillbox shells stay white). */
-function draw_shell(cx, cy, dir, owner) {
+ * side colour; a pillbox's shell takes its pillbox's colour, as the
+ * pillbox was when it fired. A shell traced to no muzzle stays white. */
+function draw_shell(cx, cy, dir, owner, pill_owner) {
 	let z = view.zoom;
 	let img = !use_big_shots ? obj_sprite(`shell_${String(dir).padStart(2, "0")}`) : undefined;
 	if (img) {
 		draw_cropped_obj(img, cx, cy);
 		return;
 	}
-	ctx.fillStyle = typeof owner === "number" ? side_color(owner) : (use_big_shots ? "#ffe678" : "#fff");
+	if (typeof owner === "number") {
+		ctx.fillStyle = side_color(owner);
+	} else if (owner === WinBoloGame.PILL_OWNER && pill_owner !== undefined) {
+		let side = pill_colour_side({ owner: pill_owner }, good_team());
+		ctx.fillStyle = side === "good" ? FRIENDLY_COLOR : side === "neutral" ? NEUTRAL_SHOT_COLOR : HOSTILE_COLOR;
+	} else {
+		ctx.fillStyle = use_big_shots ? NEUTRAL_SHOT_COLOR : "#fff";
+	}
 	if (!use_big_shots) {
 		let small_size = Math.max(1, z / 8);
 		ctx.fillRect(cx - small_size / 2, cy - small_size / 2, small_size, small_size);
@@ -1001,7 +1010,7 @@ function draw_shell(cx, cy, dir, owner) {
 function draw_falling_shells() {
 	if (!game) return;
 	for (let s of WinBoloGame.fall_positions_at(game, clock)) {
-		draw_shell(tile_to_screen_x(s.x), tile_to_screen_y(s.y), s.dir, s.owner);
+		draw_shell(tile_to_screen_x(s.x), tile_to_screen_y(s.y), s.dir, s.owner, s.pill_owner);
 	}
 }
 

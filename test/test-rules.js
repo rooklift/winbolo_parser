@@ -112,6 +112,22 @@ function test_lag_hits() {
 	check("a tank hurt more than 2 tiles away is not the one hit", events.find(e => e.explosion !== undefined).cause === "fall");
 }
 
+/* A pillbox's shell carries whose the pillbox was when it fired, for its
+ * colour: the opening snapshot's pillbox at (101, 102) is nobody's. */
+function test_pill_shells() {
+	let events = [shell(1, 102.125, 102.5), shell(2, 102.25, 102.5)];
+	run(events);
+	check("a neutral pillbox's shell", events.every(e => e.owner === WinBoloGame.PILL_OWNER && e.pill_owner === WinBoloLog.NEUTRAL), JSON.stringify(events));
+	let owned = structuredClone(snap);
+	owned.pills[0].owner = 0;
+	events = [shell(1, 102.125, 102.5), shell(2, 102.25, 102.5)];
+	run(events, null, [owned]);
+	check("an owned pillbox's shell", events.every(e => e.owner === WinBoloGame.PILL_OWNER && e.pill_owner === 0), JSON.stringify(events));
+	events = [shell(1, 101.125)];
+	run(events);
+	check("a tank's shell has no pillbox owner", events[0].owner === 0 && events[0].pill_owner === undefined, JSON.stringify(events));
+}
+
 async function test_archive() {
 	let scripts = { version: 1, rules: { shell_speed: 192 } };
 	let bytes = make_zip([["log.dat", synthetic_log()], ["scripts.json", Buffer.from(JSON.stringify(scripts))]]);
@@ -131,6 +147,7 @@ async function test_archive() {
 	test_muzzles();
 	test_bad_rules();
 	test_lag_hits();
+	test_pill_shells();
 	await test_archive();
 	console.log(failures ? `${failures} FAILED` : "all rule checks passed");
 	process.exit(failures ? 1 : 0);
