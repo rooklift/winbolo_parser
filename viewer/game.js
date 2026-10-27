@@ -44,6 +44,7 @@ const BURST_BEHIND = 0.4;                /* tiles behind it, at most (the snap c
 const BURST_ACROSS = 0.8;                /* tiles off the heading, at most */
 const MUZZLE_TOLERANCE = 1.0;            /* tiles: a new shell against the tank or pill that fired it (its first logged position is already most of a tile out) */
 const TANK_HIT_BOX = 0.5 + 1 / 32;       /* tiles: tankIsTankHit takes a shell within 128 world units (half a tile) of the centre on both axes; the 1/32 is pixel rounding */
+const LAG_HIT_RANGE = 2;                 /* tiles: a tank hurt this tick this near a burst was hit on the shooter's screen, where it was up to 14 ticks before (lag compensation) */
 const BURST_FRAME_TICKS = 28;            /* a burst animates for 23 ticks (stage 8 for two, the rest for three each), with slack */
 const TRACK_GRACE_TICKS = 3;             /* a burst follows its last flight position after at most this many ticks */
 const DIRECTION_ERROR = 2 * Math.sin(Math.PI / 32); /* the log's 16 directions round a 256-way heading: off by up to this per tile travelled */
@@ -74,7 +75,9 @@ function shell_tracker(scripts) {
 	if (opening && typeof opening === "object") {
 		for (let name in rules) set_shell_rule(rules, name, opening[name]);
 	}
-	return { tracks: [], ended: [], bursts: new Map(), rules };
+	/* each tank's armour as its last TankSetStock had it (WinBolo 2.1) */
+	let armour = Array(MAX_TANKS).fill(null);
+	return { tracks: [], ended: [], bursts: new Map(), rules, armour };
 }
 
 function burst_key(e) {
@@ -99,8 +102,13 @@ function track_tick(tr, tick, tick_events, state, effects, fall_segments, sounds
  * at a muzzle and an explained burst each add a sound. */
 function track_shells(tr, tick, tick_events, state, effects, fall_segments, sounds, hits) {
 	let flights = [], bursts = [], fired_by = [];
+	let hurt = new Set(); /* the tanks whose armour fell this tick */
 	for (let e of tick_events) {
 		if (e.type === EV.RuleSet && e.rule_name) set_shell_rule(tr.rules, e.rule_name, e.value);
+		if (e.type === EV.TankSetStock && e.player < MAX_TANKS) {
+			if (tr.armour[e.player] !== null && e.armour < tr.armour[e.player]) hurt.add(e.player);
+			tr.armour[e.player] = e.armour;
+		}
 		if (e.type !== EV.Shell) continue;
 		if (e.dir !== undefined) {
 			flights.push(e);
@@ -225,7 +233,7 @@ function track_shells(tr, tick, tick_events, state, effects, fall_segments, soun
 			continue;
 		}
 		tr.ended = tr.ended.filter(t => t !== best);
-		let { cause, victim } = burst_cause(e, state, bx, by, best.owner);
+		let { cause, victim } = burst_cause(e, state, bx, by, best.owner, hurt);
 		e.cause = cause; e.owner = best.owner; e.age = best.age;
 		if (victim !== undefined) {
 			/* remembered on the tank, for a drowning that follows */
@@ -277,8 +285,20 @@ function terrain_sounds(tick, tick_events, sounds, hits) {
  * pixel is the square's origin: that is the sign of a square hit, and
  * the square's pillbox, if any, is what was hit. A burst elsewhere is
  * the shell's own position: a tank hit if a tank is within reach (never
- * the shooter's own), else the shell falling at the end of its range. */
-function burst_cause(burst, state, bx, by, owner) {
+ * the shooter's own), else the shell falling at the end of its range.
+ *
+ * But the server tests a player's shell against the tanks as the
+ * shooter's screen showed them, up to 14 ticks ago (lag compensation, and
+ * pillbox shells against the target's delay before late 2026), so a hit
+ * can burst where the tank was rather than where it is. WinBolo 2.1 logs
+ * every hit's armour loss (TankSetStock) in the burst's tick, so a tank
+ * near the burst that lost armour or died this tick is the one hit. In
+ * 26 replays from 2.1, against their attribution tracks, this finds 868
+ * of the 888 hits (8 % of all) that were falls, and makes 13 falls hits
+ * wrongly. Older logs have no stocks, and the tank's past positions alone
+ * would call too many falls hits, so for them a hit far from its tank
+ * stays a fall unless it killed. */
+function burst_cause(burst, state, bx, by, owner, hurt) {
 	if (burst.px === 0 && burst.py === 0) {
 		let sx = Math.floor(bx), sy = Math.floor(by);
 		return { cause: state.pills.some(p => p.on_map && !p.in_tank && p.x === sx && p.y === sy) ? "pill" : "terrain" };
@@ -294,6 +314,15 @@ function burst_cause(burst, state, bx, by, owner) {
 		let reach = dying ? TANK_HIT_BOX * 2 : TANK_HIT_BOX;
 		if (Math.abs(world_x(t) - bx) < reach && Math.abs(world_y(t) - by) < reach) return { cause: "tank", victim: p.slot };
 	}
+	let victim, nearest = LAG_HIT_RANGE;
+	for (let p of state.players) {
+		let t = p.tank;
+		let dying = t.died_at === state.tick;
+		if (p.slot === owner || !(hurt.has(p.slot) || dying) || !(t.in_world || dying)) continue;
+		let d = Math.hypot(world_x(t) - bx, world_y(t) - by);
+		if (d < nearest) { nearest = d; victim = p.slot; }
+	}
+	if (victim !== undefined) return { cause: "tank", victim };
 	return { cause: "fall" };
 }
 

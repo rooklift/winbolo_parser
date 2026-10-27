@@ -202,6 +202,20 @@ with no track leading in are mine explosions and landing tank wreckage,
 which use the same frames. Both explosion sites in `shells.c` write the
 same frames, so nothing in the burst itself says.
 
+A tank hit need not burst on the tank. The 2.0.3 and 2.1 servers
+compensate for lag: they test a player's shell against the tanks as the
+shooter's screen showed them, up to 14 ticks before, so the shell can
+burst where its victim was rather than where the log has it, most often
+a tile or so behind it. Measured against the attribution tracks of 26
+replays from 2.1, 8 % of all shell hits on tanks burst out of the
+victim's reach. The victim then shows only in its stocks: 2.1 writes a
+TankSetStock with the armour lowered in the burst's tick, for all but 3 of
+10,787 hits, and the engine takes a tank within 2 tiles that lost armour
+or died in that tick as the one hit. Logs before 2.1 have no stocks, and
+there such a hit still reads as a fall unless it killed. WinBolo's source
+since late October 2026 moves the burst onto the tank where it is now,
+so the release after 2.1 will log it there.
+
 WinBolo 2.1 makes the speed and the start a scenario's to change: the
 `shell_speed` rule (32 world units a tick, classically) and
 `shell_start_add` (the steps a shell is moved on before it is first

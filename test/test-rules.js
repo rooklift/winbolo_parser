@@ -1,6 +1,7 @@
 /* Tests: the shell tracker under WinBolo 2.1's shell rules, the speed a
  * shell flies at and how far ahead of its muzzle it starts, as scripts.json
- * opens a round with them and RuleSet events change them. Hand-made events
+ * opens a round with them and RuleSet events change them; and a lag
+ * compensated hit found by the armour it took. Hand-made events
  * on the synthetic log's opening snapshot, where Alice's tank sits at
  * (100.5, 100.5). */
 "use strict";
@@ -89,6 +90,28 @@ function test_bad_rules() {
 	check("other rules leave the shells alone", events.at(-1).age === 1);
 }
 
+/* A hit judged on the shooter's screen bursts where the tank was, up to
+ * 14 ticks ago: away from Alice, a burst is hers when 2.1's stocks say
+ * she lost armour in its tick, and a fall when they do not. */
+function test_lag_hits() {
+	let stock = (tick, armour) => ({ tick, type: EV.TankSetStock, player: 0, shells: 40, mines: 40, armour, trees: 0 });
+	/* a shell heading west, too far from Alice to be hers, bursting 1.8 tiles from her */
+	let hit = (...extra) => [stock(0, 40), shell(1, 102.25, 101.5, 12), shell(2, 102.125, 101.5, 12), ...extra, burst(3, 102, 101.5)];
+	let events = hit(stock(3, 35));
+	run(events);
+	let b = events.find(e => e.explosion !== undefined);
+	check("a burst away from a tank that lost armour is its hit", b.cause === "tank", JSON.stringify(b));
+	events = hit();
+	run(events);
+	check("with no armour lost it is a fall", events.find(e => e.explosion !== undefined).cause === "fall");
+	events = hit(stock(3, 40));
+	run(events);
+	check("stocks that keep the armour are no hit", events.find(e => e.explosion !== undefined).cause === "fall");
+	events = [stock(0, 40), shell(1, 103.25, 101.5, 12), shell(2, 103.125, 101.5, 12), stock(3, 35), burst(3, 103, 101.5)];
+	run(events);
+	check("a tank hurt more than 2 tiles away is not the one hit", events.find(e => e.explosion !== undefined).cause === "fall");
+}
+
 async function test_archive() {
 	let scripts = { version: 1, rules: { shell_speed: 192 } };
 	let bytes = make_zip([["log.dat", synthetic_log()], ["scripts.json", Buffer.from(JSON.stringify(scripts))]]);
@@ -107,6 +130,7 @@ async function test_archive() {
 	test_speeds();
 	test_muzzles();
 	test_bad_rules();
+	test_lag_hits();
 	await test_archive();
 	console.log(failures ? `${failures} FAILED` : "all rule checks passed");
 	process.exit(failures ? 1 : 0);
