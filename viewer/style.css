@@ -214,6 +214,7 @@ body {
 /* Integral line height, so consecutive lines sit an even number of
  * pixels apart on a 1x display. */
 .hint { color: #8b96ad; font-size: 12px; line-height: 17px; }
+.hint.has-tip { cursor: help; }
 
 #players .player {
 	display: flex;

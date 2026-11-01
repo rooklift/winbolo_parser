@@ -205,6 +205,7 @@ let map_name_el = document.getElementById("mapName");
 let game_meta_el = document.getElementById("gameMeta");
 let version_meta_el = document.getElementById("versionMeta");
 let game_type_meta_el = document.getElementById("gameTypeMeta");
+let mods_meta_el = document.getElementById("modsMeta");
 let players_el = document.getElementById("players");
 let chat_el = document.getElementById("chat");
 let file_pick = document.getElementById("filePick");
@@ -1252,7 +1253,11 @@ async function load_log(bytes, name, generation = ++load_claims) {
 		WinBoloLog.GAME_TYPES[h.game_type] || `game type ${h.game_type}`,
 		h.created ? "server started " + new Date(h.created * 1000).toISOString().slice(0, 10) : "",
 	].filter(Boolean).join(" · ");
-	game_type_meta_el.title = h.created ? "by the server's own clock; the server may have run many games since" : "";
+	/* scripts.json lists the round's mods; a replay without one ran none */
+	let mods = (game.scripts && Array.isArray(game.scripts.scripts) ? game.scripts.scripts : []).filter(s => s && s.kind === "mod");
+	mods_meta_el.textContent = mods.length === 0 ? "No mods loaded" : `${mods.length} mod${mods.length === 1 ? "" : "s"} loaded`;
+	mods_meta_el.title = mods.map(s => (s.manifest && s.manifest.name) || s.file || "unnamed mod").join("\n");
+	mods_meta_el.classList.toggle("has-tip", mods.length > 0);
 	for (let w of game.log.warnings) console.warn("replay:", w);
 
 	rebuild_chat(clock);
