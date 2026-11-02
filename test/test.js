@@ -291,6 +291,21 @@ async function test_synthetic() {
 	check("previous change stops at the start", WinBoloGame.adjacent_change_tick(game, 12, -1) === 12);
 	check("team of unallied", WinBoloGame.team_of(state, 1) === 1);
 
+	/* a tank killed by its own mine is logged as killed by itself, as a
+	 * drowning is, with the mine's crater earlier in the tick */
+	let header_bytes = Array.from(log_bytes.subarray(0, WinBoloLog.parse_header(log_bytes).offset));
+	let own_mine = WinBoloGame.build(WinBoloLog.parse_log(Uint8Array.from([...header_bytes, ...snapshot(),
+		...block([event(1, [0, 0x47, 0x42, 0, 0, ...pstr("Alice")])]),                        /* tick 0: Alice joins */
+		...block([event(38, []), event(3, [0, 100, 100, 0x88, 0x40])]),                         /* tick 1: the start; her tank on grass */
+		...block([event(5, [100, 100, 15])]),                                                   /* tick 2: her mine under her */
+		...block([event(5, [100, 100, 3]), event(33, [0, 0]), event(36, [0]), event(3, [0, 0, 0, 0, 0x40])]), /* tick 3: it goes off; killed by herself */
+		...block([]),
+		0, 0,
+	])));
+	let own_mine_kinds = own_mine.chat.map(m => m.kind);
+	check("a death by one's own mine is a mine kill, not a drowning", own_mine_kinds.includes("mine_kill") && !own_mine_kinds.includes("drowned"), own_mine_kinds.join(","));
+	check("and it does not sink", !own_mine.sounds.some(s => s.kind === "tank_sinking"), own_mine.sounds.map(s => s.kind).join(","));
+
 	/* a bare log.dat, no zip */
 	let bare = WinBoloLog.parse_log(log_bytes);
 	check("bare log parses the same", bare.events.length === log.events.length && bare.ticks === 595);

@@ -240,7 +240,9 @@ dead tank's position is logged as 0,0 at the end of that tick. A tank
 in deep water is logged as killed by itself (killer equal to killed),
 again with PlayerDied, whether it drove in or its boat was shot from
 under it; in the latter case the shell's burst on the tank and the
-tank's on-boat flag dropping come a tick or two before. A boat left at the shore is a terrain
+tank's on-boat flag dropping come a tick or two before. A tank killed
+by its own mine is logged the same way, killed by itself; the mine's
+change to a crater is logged earlier in the same tick. A boat left at the shore is a terrain
 change from river to boat, and back to river when a tank takes it. A death
 by a mine logs no event at all: the tank's position simply goes to 0,0
 (the wreckage bursts and the crater they leave are logged, and the tank

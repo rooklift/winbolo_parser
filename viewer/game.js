@@ -463,9 +463,9 @@ function unally(s, p) {
 	s.players[p].allies = [];
 }
 
-/* Did a mine just go off under (or next to) this tank? */
-function mine_under(s, t, tick) {
-	return s.mine_blasts.some(b => tick - b.tick <= MINE_KILL_TICKS && Math.abs(b.x + 0.5 - world_x(t)) <= 1.5 && Math.abs(b.y + 0.5 - world_y(t)) <= 1.5);
+/* Did a mine just go off under (or next to) this tank, within `within` ticks? */
+function mine_under(s, t, tick, within = MINE_KILL_TICKS) {
+	return s.mine_blasts.some(b => tick - b.tick <= within && Math.abs(b.x + 0.5 - world_x(t)) <= 1.5 && Math.abs(b.y + 0.5 - world_y(t)) <= 1.5);
 }
 
 /* World position (tile units, tile centres at .5) of a tank, man or shell
@@ -722,7 +722,12 @@ function apply_event(s, e, effects, chat, sounds) {
 			pl.tank.in_world = false;
 			pl.tank.died_at = e.tick;
 			pl.lgm.out = false;
-			if (e.type === EV.KillPlayer && e.killer === e.player) {
+			if (e.type === EV.KillPlayer && e.killer === e.player && mine_under(s, pl.tank, e.tick, 0)) {
+				/* a tank killed by its own mine is logged as killed by itself,
+				 * as a drowning is; the mine's crater comes earlier in the same
+				 * tick (an older blast nearby says nothing: drownings follow them) */
+				push_chat("mine_kill");
+			} else if (e.type === EV.KillPlayer && e.killer === e.player) {
 				/* a tank in deep water is logged as killed by itself: it drove
 				 * in, or its boat was shot from under it (a hit on the tank
 				 * and the boat flag dropping, a tick or two before) */

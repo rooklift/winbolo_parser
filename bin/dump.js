@@ -96,7 +96,7 @@ async function main() {
 				case "ServerText": line = `server${e.team ? " (to team " + e.team + ")" : e.to !== WinBoloLog.NEUTRAL ? " (to " + who(e.to) + ")" : ""}: ${e.text}`; break;
 				case "MessageAll": line = `${who(e.player)}: ${e.text}`; break;
 				case "MessagePlayers": line = `${who(e.player)} (to ${who(e.to)}): ${e.text}`; break;
-				case "KillPlayer": line = e.killer === e.player ? `${who(e.player)} drowned` : `${e.killer === WinBoloLog.NEUTRAL ? "a pillbox" : who(e.killer)} killed ${who(e.player)}`; break;
+				case "KillPlayer": line = e.killer === e.player ? `${who(e.player)} drowned or hit their own mine` : `${e.killer === WinBoloLog.NEUTRAL ? "a pillbox" : who(e.killer)} killed ${who(e.player)}`; break;
 				case "PlayerDied": line = `${who(e.player)} died`; break;
 				case "AllyAccept": line = `${who(e.player)} allied with ${who(e.other)}`; break;
 				case "AllyLeave": line = `${who(e.player)} left the alliance`; break;
