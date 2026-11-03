@@ -257,6 +257,10 @@ async function test_synthetic() {
 	check("an unlogged death under a mine is a mine kill", played[6].name === "Alice" && played[6].tick === 544);
 	check("the unlogged death bursts", game.effects.some(e => e.type === "tank_death" && e.tick === 544 && Math.abs(e.x - 100.5) < 0.01));
 	check("the tank is gone after it", !WinBoloGame.state_at(game, 544).state.players[0].tank.in_world);
+	let death_bursts = game.effects.filter(e => e.type === "tank_death");
+	check("drownings and sunk boats burst in water colour, other deaths do not",
+		death_bursts.filter(e => e.sinking).map(e => e.tick).join(",") === "546,566,594" && death_bursts.some(e => !e.sinking && e.tick === 540) && death_bursts.some(e => !e.sinking && e.tick === 544),
+		death_bursts.map(e => `${e.tick}:${e.sinking}`).join(","));
 	let lgm_death = game.effects.find(e => e.type === "lgm_death");
 	check("the builder's death bursts where he last stood", lgm_death && lgm_death.tick === 269 && lgm_death.player === 0 && Math.abs(lgm_death.x - 101.5) < 0.01 && Math.abs(lgm_death.y - 100.25) < 0.01, JSON.stringify(lgm_death));
 	check("pillbox kill names the victim", played[5].name === "Alice");
@@ -305,6 +309,7 @@ async function test_synthetic() {
 	let own_mine_kinds = own_mine.chat.map(m => m.kind);
 	check("a death by one's own mine is a mine kill, not a drowning", own_mine_kinds.includes("mine_kill") && !own_mine_kinds.includes("drowned"), own_mine_kinds.join(","));
 	check("and it does not sink", !own_mine.sounds.some(s => s.kind === "tank_sinking"), own_mine.sounds.map(s => s.kind).join(","));
+	check("nor burst in water colour", !own_mine.effects.some(e => e.type === "tank_death" && e.sinking));
 
 	/* a bare log.dat, no zip */
 	let bare = WinBoloLog.parse_log(log_bytes);

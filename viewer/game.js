@@ -528,11 +528,12 @@ function apply_event(s, e, effects, chat, sounds) {
 				 * something else it does not log, such as deep water. */
 				if (pl.tank.in_world && pl.tank.died_at !== e.tick && !pl.quit) {
 					pl.tank.died_at = e.tick;
-					if (effects) effects.push({ tick: e.tick, type: "tank_death", x: world_x(pl.tank), y: world_y(pl.tank) });
 					let mined = mine_under(s, pl.tank, e.tick);
-					push_chat(mined ? "mine_kill" : "died");
 					/* the mine's blast has its own sound; a tank lost in deep water sank */
-					if (sounds && !mined && !pl.tank.on_boat && s.grid[pl.tank.my * MAP_SIZE + pl.tank.mx] === DEEP_SEA) {
+					let sank = !mined && !pl.tank.on_boat && s.grid[pl.tank.my * MAP_SIZE + pl.tank.mx] === DEEP_SEA;
+					if (effects) effects.push({ tick: e.tick, type: "tank_death", x: world_x(pl.tank), y: world_y(pl.tank), sinking: sank });
+					push_chat(mined ? "mine_kill" : "died");
+					if (sounds && sank) {
 						WinBoloSound.push_sound(sounds, { tick: e.tick, kind: "tank_sinking", player: null, x: world_x(pl.tank), y: world_y(pl.tank) });
 					}
 				}
@@ -718,7 +719,11 @@ function apply_event(s, e, effects, chat, sounds) {
 			 * (the public source wrote one or the other); the second of
 			 * the pair in one tick adds nothing */
 			if (pl.tank.died_at === e.tick) break;
-			if (effects && pl.tank.in_world) effects.push({ tick: e.tick, type: "tank_death", x: world_x(pl.tank), y: world_y(pl.tank) });
+			let burst = null;
+			if (effects && pl.tank.in_world) {
+				burst = { tick: e.tick, type: "tank_death", x: world_x(pl.tank), y: world_y(pl.tank), sinking: false };
+				effects.push(burst);
+			}
 			pl.tank.in_world = false;
 			pl.tank.died_at = e.tick;
 			pl.lgm.out = false;
@@ -732,6 +737,7 @@ function apply_event(s, e, effects, chat, sounds) {
 				 * in, or its boat was shot from under it (a hit on the tank
 				 * and the boat flag dropping, a tick or two before) */
 				let t = pl.tank;
+				if (burst) burst.sinking = true;
 				if (sounds) WinBoloSound.push_sound(sounds, { tick: e.tick, kind: "tank_sinking", player: null, x: world_x(t), y: world_y(t) });
 				if (t.boat_lost_at !== undefined && e.tick - t.boat_lost_at <= SINK_TICKS && t.hit_at !== undefined && e.tick - t.hit_at <= SINK_TICKS) {
 					/* the shooter is null when the tracker could not place the
