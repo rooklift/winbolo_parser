@@ -1026,7 +1026,9 @@ function draw_effects() {
 		let cy = tile_to_screen_y(e.y);
 		switch (e.type) {
 			case "tank_death": {
-				ctx.strokeStyle = `rgba(255,120,40,${1 - age})`;
+				/* a tank going under in deep water is drawn in the splash's
+				 * water colour, as the Ancient Bolo viewer draws a sinking */
+				ctx.strokeStyle = e.sinking ? `rgba(150,200,255,${1 - age})` : `rgba(255,120,40,${1 - age})`;
 				ctx.lineWidth = Math.max(1.5, z * 0.2);
 				ctx.beginPath();
 				ctx.arc(cx, cy, (0.4 + age * 1.6) * z, 0, Math.PI * 2);
