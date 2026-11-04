@@ -128,6 +128,22 @@ function test_pill_shells() {
 	check("a tank's shell has no pillbox owner", events[0].owner === 0 && events[0].pill_owner === undefined, JSON.stringify(events));
 }
 
+/* The rules table the viewer shows: scripts.json's, then what the round
+ * start wrote over it, then the changes during the game. */
+function test_rule_table() {
+	let events = [rule(0, 64), rule(0, 0.25, 108), shell(1, 101.125), rule(5, 128), rule(6, 4, 999), rule(6, 2, 300)];
+	let game = run(events, { version: 1, rules: { tank_reload_ticks: 8, shell_speed: 192 } });
+	let table = WinBoloGame.rule_table(game);
+	check("the rule table, by name", JSON.stringify(table) === JSON.stringify([
+		{ name: WinBoloLog.RULE_NAMES[108], value: 0.25, changes: [] },
+		{ name: "shell_speed", value: 64, changes: [{ tick: 5, value: 128 }] },
+		{ name: "tank_reload_ticks", value: 8, changes: [] },
+		{ name: "rule 300", value: undefined, changes: [{ tick: 6, value: 2 }] },
+		{ name: "rule 999", value: undefined, changes: [{ tick: 6, value: 4 }] },
+	]), JSON.stringify(table));
+	check("no rules, no table", WinBoloGame.rule_table(run([shell(1, 101.125)])).length === 0);
+}
+
 async function test_archive() {
 	let scripts = { version: 1, rules: { shell_speed: 192 } };
 	let bytes = make_zip([["log.dat", synthetic_log()], ["scripts.json", Buffer.from(JSON.stringify(scripts))]]);
@@ -148,6 +164,7 @@ async function test_archive() {
 	test_bad_rules();
 	test_lag_hits();
 	test_pill_shells();
+	test_rule_table();
 	await test_archive();
 	console.log(failures ? `${failures} FAILED` : "all rule checks passed");
 	process.exit(failures ? 1 : 0);

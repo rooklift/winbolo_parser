@@ -986,11 +986,42 @@ function restated(state, clock) {
 	return clock - state.tick <= RESTATEMENT_TICKS;
 }
 
+/* The rules a game was played under, where they are not the classic ones:
+ * [{name, value, changes: [{tick, value}]}], by name, so a rule's
+ * family (shell_, speed_, tank_...) reads together. scripts.json gives the rules its scripts' manifests set; what
+ * on_setup and the rest of the round start wrote is RuleSet events at or
+ * before the start, and those go over it as the opening value. A RuleSet
+ * after the start is a change. value is undefined for a rule that opened
+ * on its classic value and was changed later. A rule index the parser has
+ * no name for is named by its number, and goes after the named ones. */
+function rule_table(game) {
+	let rows = new Map();
+	let row = name => {
+		if (!rows.has(name)) rows.set(name, { name, value: undefined, changes: [] });
+		return rows.get(name);
+	};
+	let opening = game.scripts && game.scripts.rules;
+	if (opening && typeof opening === "object") {
+		for (let name in opening) {
+			if (Number.isFinite(opening[name])) row(name).value = opening[name];
+		}
+	}
+	for (let e of game.events) {
+		if (e.type !== EV.RuleSet) continue;
+		let r = row(e.rule_name || `rule ${e.rule}`);
+		if (e.tick <= game.t0) r.value = e.value;
+		else r.changes.push({ tick: e.tick, value: e.value });
+	}
+	let unnamed = r => r.name.startsWith("rule ") ? 1 : 0;
+	return [...rows.values()].sort((a, b) => unnamed(a) - unnamed(b) ||
+		(unnamed(a) ? parseInt(a.name.slice(5)) - parseInt(b.name.slice(5)) : a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
 const WinBoloGame = {
 	EFFECT_TICKS, NEUTRAL, TICKS_PER_SECOND,
 	initial_state, state_from_snapshot, clone_state, apply_event, build, build_steps,
 	state_at, advance, adjacent_change_tick, restated, team_of, name_of, world_x, world_y,
-	land_bounds, event_lower_bound, game_start_tick, fall_positions_at, PILL_OWNER,
+	land_bounds, event_lower_bound, game_start_tick, fall_positions_at, PILL_OWNER, rule_table,
 };
 
 if (typeof module !== "undefined" && module.exports) {

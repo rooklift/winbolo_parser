@@ -518,6 +518,17 @@ function fmt_time(ticks) {
 	return d < 0 ? "-" + text : text;
 }
 
+/* One rule_table row: "shell_speed = 64", then each change with its time,
+ * "shell_speed = 64, 128 at 3:21". A float rule comes as the double of a
+ * float, so seven significant figures say all it holds. */
+function rule_line(r) {
+	let fmt_value = v => String(Number.isInteger(v) ? v : Number(v.toPrecision(7)));
+	return `${r.name} = ` + [
+		r.value === undefined ? "classic" : fmt_value(r.value),
+		...r.changes.map(c => `${fmt_value(c.value)} at ${fmt_time(c.tick)}`),
+	].join(", ");
+}
+
 /* WebKit/Blink can't paint the played part of the seek track by itself;
  * style.css splits the track's gradient at --seek_fill. */
 function update_seek_fill() {
@@ -1258,8 +1269,13 @@ async function load_log(bytes, name, generation = ++load_claims) {
 	/* scripts.json lists the round's mods; a replay without one ran none */
 	let mods = (game.scripts && Array.isArray(game.scripts.scripts) ? game.scripts.scripts : []).filter(s => s && s.kind === "mod");
 	mods_meta_el.textContent = mods.length === 0 ? "No mods loaded" : `${mods.length} mod${mods.length === 1 ? "" : "s"} loaded`;
-	mods_meta_el.title = mods.map(s => (s.manifest && s.manifest.name) || s.file || "unnamed mod").join("\n");
-	mods_meta_el.classList.toggle("has-tip", mods.length > 0);
+	/* and below them, after a blank line, the rules that are not classic */
+	let tip = [
+		mods.map(s => (s.manifest && s.manifest.name) || s.file || "unnamed mod").join("\n"),
+		WinBoloGame.rule_table(game).map(rule_line).join("\n"),
+	].filter(Boolean).join("\n\n");
+	mods_meta_el.title = tip;
+	mods_meta_el.classList.toggle("has-tip", tip !== "");
 	for (let w of game.log.warnings) console.warn("replay:", w);
 
 	rebuild_chat(clock);
