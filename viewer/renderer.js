@@ -1261,9 +1261,10 @@ async function load_log(bytes, name, generation = ++load_claims) {
 	loaded_name = name || null;
 	document.title = (name ? name.split(/[\\/]/).pop() + " — " : "") + "WinBolo Replay Viewer";
 	let h = game.header;
+	let type = WinBoloGame.game_type(game);
 	version_meta_el.textContent = `WinBolo ${h.bolo_version} · log v${h.version}`;
 	game_type_meta_el.textContent = [
-		WinBoloLog.GAME_TYPES[h.game_type] || `game type ${h.game_type}`,
+		WinBoloLog.GAME_TYPES[type] || `game type ${type}`,
 		h.created ? "server started " + new Date(h.created * 1000).toISOString().slice(0, 10) : "",
 	].filter(Boolean).join(" · ");
 	/* scripts.json lists the round's mods; a replay without one ran none */

@@ -144,6 +144,21 @@ function test_rule_table() {
 	check("no rules, no table", WinBoloGame.rule_table(run([shell(1, 101.125)])).length === 0);
 }
 
+/* The game type: the header's, unless the lobby changed it before the
+ * round started; a change after the start is not the round's. */
+function test_game_type() {
+	let settings = (tick, game_type) => ({ tick, type: EV.GameSettings, game_type });
+	let typed = (events, t0) => {
+		let game = WinBoloGame.build({ header: { game_type: 3 }, snapshots: [structuredClone(snap)], events, ticks: 20 });
+		game.t0 = t0;
+		return WinBoloGame.game_type(game);
+	};
+	check("the header's type without settings", typed([], 0) === 3);
+	check("the lobby's change before the start", typed([settings(0, 3), settings(2, 1), settings(4, 1)], 4) === 1);
+	check("not a change after the start", typed([settings(0, 2), settings(5, 1)], 4) === 2);
+	check("a blob without the type", typed([settings(0, 0)], 4) === 3);
+}
+
 async function test_archive() {
 	let scripts = { version: 1, rules: { shell_speed: 192 } };
 	let bytes = make_zip([["log.dat", synthetic_log()], ["scripts.json", Buffer.from(JSON.stringify(scripts))]]);
@@ -165,6 +180,7 @@ async function test_archive() {
 	test_lag_hits();
 	test_pill_shells();
 	test_rule_table();
+	test_game_type();
 	await test_archive();
 	console.log(failures ? `${failures} FAILED` : "all rule checks passed");
 	process.exit(failures ? 1 : 0);

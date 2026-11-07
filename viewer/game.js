@@ -1017,11 +1017,25 @@ function rule_table(game) {
 		(unnamed(a) ? parseInt(a.name.slice(5)) - parseInt(b.name.slice(5)) : a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
+/* The round's game type. The header has the type the server was set to
+ * when the log began, often in the lobby, where it may be changed before
+ * the round starts; a GameSettings event at or before the start has the
+ * type the round was played under. A blob too short to hold the type
+ * reads it as 0, which is no type. */
+function game_type(game) {
+	let type = game.header.game_type;
+	for (let e of game.events) {
+		if (e.tick > game.t0) break;
+		if (e.type === EV.GameSettings && e.game_type) type = e.game_type;
+	}
+	return type;
+}
+
 const WinBoloGame = {
 	EFFECT_TICKS, NEUTRAL, TICKS_PER_SECOND,
 	initial_state, state_from_snapshot, clone_state, apply_event, build, build_steps,
 	state_at, advance, adjacent_change_tick, restated, team_of, name_of, world_x, world_y,
-	land_bounds, event_lower_bound, game_start_tick, fall_positions_at, PILL_OWNER, rule_table,
+	land_bounds, event_lower_bound, game_start_tick, fall_positions_at, PILL_OWNER, rule_table, game_type,
 };
 
 if (typeof module !== "undefined" && module.exports) {
