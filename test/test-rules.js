@@ -159,6 +159,58 @@ function test_game_type() {
 	check("a blob without the type", typed([settings(0, 0)], 4) === 3);
 }
 
+/* The lag summary the viewer shows: the server's timing from its last
+ * OverrunStats, each player's round trip, and the spikes, with the
+ * round's first two seconds left out. */
+function test_lag_summary() {
+	let lag = (tick, player, rtt_ms) => ({ tick, type: EV.PlayerLag, player, rtt_ms, rewind_ticks: 5 });
+	let stats = (tick, round_frames, tick_peak_ms, over_budget, extra = {}) => ({
+		tick, type: EV.OverrunStats, round_frames, tick_peak_ms, over_budget, budget_ms: 20, has_bots: false, ...extra,
+	});
+	let summed = events => {
+		let game = WinBoloGame.build({ header: {}, snapshots: [structuredClone(snap)], events, ticks: 4000 });
+		game.t0 = 10;
+		return WinBoloGame.lag_summary(game);
+	};
+	check("no lag records, no summary", summed([shell(11, 101.125)]) === null);
+
+	let events = [
+		lag(5, 0, 999),                                     /* before the game: not its lag */
+		lag(10, 0, 600), lag(10, 1, 650), lag(10, 2, 0),    /* the round start's long readings */
+		lag(60, 0, 60), lag(60, 1, 150), lag(60, 2, 0),
+		lag(110, 0, 60), lag(110, 1, 150), lag(110, 2, 0),
+		lag(160, 0, 62), lag(160, 1, 150),
+		lag(200, 0, 900), lag(205, 1, 950),                 /* both at once */
+		lag(210, 0, 60), lag(210, 1, 150),
+		lag(260, 0, 58), lag(260, 1, 150),
+		lag(400, 1, 420),                                   /* one alone */
+		lag(450, 1, 150),
+		stats(1510, 1500, 30.5, 4),
+		stats(3010, 3000, 950.2, 9),
+		stats(3500, 3490, 950.2, 11, { round_end: true }),
+		stats(3600, 1500, 5000, 99),                        /* another round's */
+	];
+	let s = summed(events);
+	check("lag: the server's last record, and when its worst frame came", JSON.stringify(s.server) === JSON.stringify({
+		frames: 3490, over_budget: 11, budget_ms: 20, peak_ms: 950.2, peak_from: 1510, peak_to: 3010, bots: null,
+	}), JSON.stringify(s.server));
+	check("lag: the players, without the bot or the round start", JSON.stringify(s.players) === JSON.stringify([
+		{ player: 0, typical_ms: 60, worst_ms: 900 },
+		{ player: 1, typical_ms: 150, worst_ms: 950 },
+	]), JSON.stringify(s.players));
+	check("lag: spikes, shared and alone", JSON.stringify(s.spikes) === JSON.stringify([
+		{ tick: 200, players: [0, 1], peak_ms: 950 },
+		{ tick: 400, players: [1], peak_ms: 420 },
+	]), JSON.stringify(s.spikes));
+
+	let bots = summed([stats(1510, 1500, 12, 0, { has_bots: true, target_ms: 12, total_overruns: 30, total_thinks: 1500, brain_peak_ms: 44.5 })]);
+	check("lag: a server record alone, with its bots", bots.players.length === 0 && bots.spikes.length === 0 &&
+		JSON.stringify(bots.server.bots) === JSON.stringify({ target_ms: 12, overruns: 30, thinks: 1500, peak_ms: 44.5 }), JSON.stringify(bots));
+	let alone = summed([lag(10, 3, 80)]);
+	check("lag: a player with no record after the start", alone.server === null &&
+		JSON.stringify(alone.players) === JSON.stringify([{ player: 3, typical_ms: 80, worst_ms: null }]), JSON.stringify(alone));
+}
+
 async function test_archive() {
 	let scripts = { version: 1, rules: { shell_speed: 192 } };
 	let bytes = make_zip([["log.dat", synthetic_log()], ["scripts.json", Buffer.from(JSON.stringify(scripts))]]);
@@ -181,6 +233,7 @@ async function test_archive() {
 	test_pill_shells();
 	test_rule_table();
 	test_game_type();
+	test_lag_summary();
 	await test_archive();
 	console.log(failures ? `${failures} FAILED` : "all rule checks passed");
 	process.exit(failures ? 1 : 0);

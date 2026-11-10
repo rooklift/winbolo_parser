@@ -206,6 +206,8 @@ let game_meta_el = document.getElementById("gameMeta");
 let version_meta_el = document.getElementById("versionMeta");
 let game_type_meta_el = document.getElementById("gameTypeMeta");
 let mods_meta_el = document.getElementById("modsMeta");
+let lag_sep_el = document.getElementById("lagSep");
+let lag_meta_el = document.getElementById("lagMeta");
 let players_el = document.getElementById("players");
 let chat_el = document.getElementById("chat");
 let file_pick = document.getElementById("filePick");
@@ -527,6 +529,56 @@ function rule_line(r) {
 		r.value === undefined ? "classic" : fmt_value(r.value),
 		...r.changes.map(c => `${fmt_value(c.value)} at ${fmt_time(c.tick)}`),
 	].join(", ");
+}
+
+const LAG_TIP_SPIKES = 12; /* the tooltip lists this many spikes, the longest round trips first */
+
+function fmt_ms(ms) {
+	if (ms >= 1000) return `${(ms / 1000).toFixed(2)} s`;
+	return `${ms >= 10 ? Math.round(ms) : Number(ms.toFixed(1))} ms`;
+}
+
+function fmt_share(part, total) {
+	if (!total || !part) return "0%";
+	let percent = part * 100 / total;
+	return percent < 0.05 ? "under 0.1%" : `${percent.toFixed(1)}%`;
+}
+
+/* The sidebar's lag label and its tooltip, from WinBoloGame.lag_summary:
+ * the server's timing, each player's round trip, and the spikes. */
+function lag_label(lag) {
+	return lag.server ? `server peak ${fmt_ms(lag.server.peak_ms)}` : "lag recorded";
+}
+
+function lag_tip(lag) {
+	let parts = [];
+	let s = lag.server;
+	if (s) {
+		let lines = [
+			`Server's slowest frame: ${fmt_ms(s.peak_ms)}, between ${fmt_time(s.peak_from)} and ${fmt_time(s.peak_to)}`,
+			`${s.over_budget.toLocaleString()} of ${s.frames.toLocaleString()} frames (${fmt_share(s.over_budget, s.frames)}) took ${s.budget_ms} ms or longer`,
+		];
+		if (s.bots) {
+			lines.push(`Bots: ${s.bots.overruns.toLocaleString()} of ${s.bots.thinks.toLocaleString()} thinks (${fmt_share(s.bots.overruns, s.bots.thinks)}) over ${fmt_ms(s.bots.target_ms)}, slowest ${fmt_ms(s.bots.peak_ms)}`);
+		}
+		parts.push(lines.join("\n"));
+	}
+	let name = p => WinBoloGame.name_of(game.final, p);
+	if (lag.players.length) {
+		parts.push(["Round trip, typical / worst:",
+			...lag.players.map(p => `${name(p.player)}: ${fmt_ms(p.typical_ms)}` + (p.worst_ms === null ? "" : ` / ${fmt_ms(p.worst_ms)}`)),
+		].join("\n"));
+	}
+	if (lag.spikes.length) {
+		let shown = lag.spikes.slice().sort((a, b) => b.peak_ms - a.peak_ms).slice(0, LAG_TIP_SPIKES).sort((a, b) => a.tick - b.tick);
+		let who = sp => sp.players.length === lag.players.length && sp.players.length > 1 ? "everyone"
+			: sp.players.length <= 2 ? sp.players.map(name).join(" and ")
+			: `${sp.players.length} players`;
+		let lines = ["Lag spikes:", ...shown.map(sp => `${fmt_time(sp.tick)} ${who(sp)}, up to ${fmt_ms(sp.peak_ms)}`)];
+		if (lag.spikes.length > shown.length) lines.push(`and ${lag.spikes.length - shown.length} smaller`);
+		parts.push(lines.join("\n"));
+	}
+	return parts.join("\n\n");
 }
 
 /* WebKit/Blink can't paint the played part of the seek track by itself;
@@ -1277,6 +1329,12 @@ async function load_log(bytes, name, generation = ++load_claims) {
 	].filter(Boolean).join("\n\n");
 	mods_meta_el.title = tip;
 	mods_meta_el.classList.toggle("has-tip", tip !== "");
+	/* beside them, the lag a 2.2 server recorded, when it did */
+	let lag = WinBoloGame.lag_summary(game);
+	lag_sep_el.hidden = !lag;
+	lag_meta_el.textContent = lag ? lag_label(lag) : "";
+	lag_meta_el.title = lag ? lag_tip(lag) : "";
+	lag_meta_el.classList.toggle("has-tip", lag !== null);
 	for (let w of game.log.warnings) console.warn("replay:", w);
 
 	rebuild_chat(clock);

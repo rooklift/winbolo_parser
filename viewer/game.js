@@ -1031,8 +1031,112 @@ function game_type(game) {
 	return type;
 }
 
+const LAG_SETTLE_TICKS = 2 * TICKS_PER_SECOND; /* every client reads a long round trip as the round starts; not counted as lag */
+const LAG_HOLD_TICKS = TICKS_PER_SECOND;       /* a PlayerLag stands for a second at most: the server writes one a second */
+const LAG_SPIKE_MS = 200;                      /* a round trip this far over the player's typical one is a spike */
+const LAG_SPIKE_GAP_TICKS = TICKS_PER_SECOND;  /* spikes within this of each other, any player's, are one */
+
+/* The round trip a player had for half the time its records cover: each
+ * record stands until the next, for a second at most. */
+function typical_rtt(records) {
+	let spans = records.map((r, i) => ({
+		ms: r.rtt_ms,
+		ticks: Math.min(LAG_HOLD_TICKS, i + 1 < records.length ? records[i + 1].tick - r.tick : LAG_HOLD_TICKS),
+	})).sort((a, b) => a.ms - b.ms);
+	let total = spans.reduce((n, s) => n + s.ticks, 0);
+	let seen = 0;
+	for (let s of spans) {
+		seen += s.ticks;
+		if (seen * 2 >= total) return s.ms;
+	}
+	return 0;
+}
+
+/* The lag of the game, from the PlayerLag and OverrunStats events a 2.2
+ * server writes, or null for a log with neither:
+ *
+ *   server   the server's frame timing as its last OverrunStats has it
+ *            (the counts run from the round's start), or null:
+ *            { frames, over_budget, budget_ms, peak_ms, peak_from, peak_to,
+ *            bots }. The worst frame fell between the ticks peak_from and
+ *            peak_to, the 30 s between the record that first held it and
+ *            the one before. bots is null for a round without any, else
+ *            { target_ms, overruns, thinks, peak_ms }.
+ *   players  [{ player, typical_ms, worst_ms }] by slot, for each player
+ *            whose round trip was ever above 0 (a bot's never is).
+ *            worst_ms is null for one with no record after the start.
+ *   spikes   [{ tick, players, peak_ms }] in order: the times a round trip
+ *            went LAG_SPIKE_MS over its player's typical one, with the
+ *            slots it happened to together. All of them at once is the
+ *            server stalling; one alone is that player's connection.
+ *
+ * The first two seconds of the game are left out of worst_ms and spikes. */
+function lag_summary(game) {
+	let records = new Map(); /* slot -> its PlayerLag events */
+	let stats = [];
+	for (let e of game.events) {
+		if (e.tick < game.t0) continue;
+		if (e.type === EV.PlayerLag && e.player !== undefined) {
+			if (!records.has(e.player)) records.set(e.player, []);
+			records.get(e.player).push(e);
+		} else if (e.type === EV.OverrunStats && e.round_frames !== undefined) {
+			/* the frame count starting again is another round's: not this game's */
+			if (stats.length && e.round_frames < stats[stats.length - 1].round_frames) break;
+			stats.push(e);
+		}
+	}
+
+	let server = null;
+	if (stats.length) {
+		let last = stats[stats.length - 1];
+		let peak = -1, peak_from = 0, peak_to = 0, before = 0;
+		for (let s of stats) {
+			if (s.tick_peak_ms > peak) {
+				peak = s.tick_peak_ms;
+				peak_from = before;
+				peak_to = s.round_frames;
+			}
+			before = s.round_frames;
+		}
+		server = {
+			/* a frame is a log tick, and the round's first is the game's start */
+			frames: last.round_frames, over_budget: last.over_budget, budget_ms: last.budget_ms,
+			peak_ms: last.tick_peak_ms, peak_from: game.t0 + peak_from, peak_to: game.t0 + peak_to,
+			bots: last.has_bots ? { target_ms: last.target_ms, overruns: last.total_overruns, thinks: last.total_thinks, peak_ms: last.brain_peak_ms } : null,
+		};
+	}
+
+	let players = [];
+	let high = []; /* every record over its player's spike line */
+	let settled = game.t0 + LAG_SETTLE_TICKS;
+	for (let [player, list] of [...records].sort((a, b) => a[0] - b[0])) {
+		if (!list.some(r => r.rtt_ms > 0)) continue;
+		let typical_ms = typical_rtt(list);
+		let worst_ms = null;
+		for (let r of list) {
+			if (r.tick < settled) continue;
+			if (worst_ms === null || r.rtt_ms > worst_ms) worst_ms = r.rtt_ms;
+			if (r.rtt_ms >= typical_ms + LAG_SPIKE_MS) high.push(r);
+		}
+		players.push({ player, typical_ms, worst_ms });
+	}
+	high.sort((a, b) => a.tick - b.tick);
+	let spikes = [];
+	let last_tick = -Infinity;
+	for (let r of high) {
+		if (r.tick - last_tick > LAG_SPIKE_GAP_TICKS) spikes.push({ tick: r.tick, players: [], peak_ms: 0 });
+		let spike = spikes[spikes.length - 1];
+		if (!spike.players.includes(r.player)) spike.players.push(r.player);
+		spike.peak_ms = Math.max(spike.peak_ms, r.rtt_ms);
+		last_tick = r.tick;
+	}
+	for (let s of spikes) s.players.sort((a, b) => a - b);
+
+	return server || players.length ? { server, players, spikes } : null;
+}
+
 const WinBoloGame = {
-	EFFECT_TICKS, NEUTRAL, TICKS_PER_SECOND,
+	EFFECT_TICKS, NEUTRAL, TICKS_PER_SECOND, lag_summary,
 	initial_state, state_from_snapshot, clone_state, apply_event, build, build_steps,
 	state_at, advance, adjacent_change_tick, restated, team_of, name_of, world_x, world_y,
 	land_bounds, event_lower_bound, game_start_tick, fall_positions_at, PILL_OWNER, rule_table, game_type,
