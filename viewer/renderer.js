@@ -971,6 +971,7 @@ function draw_object_label(label, cx, cy, r) {
  * drawn in a second pass above every other sprite. The log restates each
  * man every tick he is out of his tank, so a state older than the clock
  * shows none. */
+const PARACHUTE_OFFSET = 0.5;
 function draw_men(parachuting) {
 	let z = view.zoom;
 	if (!WinBoloGame.restated(cur, clock)) return;
@@ -983,6 +984,11 @@ function draw_men(parachuting) {
 		let cx = tile_to_screen_x(WinBoloGame.world_x(m));
 		let cy = tile_to_screen_y(WinBoloGame.world_y(m));
 		if (parachute) {
+			/* WinBolo draws the parachute's 16x16 tile from its top-left at
+			 * the logged point, not centred on it as it does the walking
+			 * frames, so its centre sits half a tile down and right. */
+			cx += PARACHUTE_OFFSET * z;
+			cy += PARACHUTE_OFFSET * z;
 			let img = obj_sprite("lgm_helicopter");
 			if (img) {
 				draw_obj(img, cx - z / 2, cy - z / 2);
