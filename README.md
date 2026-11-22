@@ -111,6 +111,7 @@ build" workflow in the Actions tab builds any branch by hand.
 | drag                 | pan                                             |
 | L                    | lock the view to the viewpoint player           |
 | G, T, M, B, N        | simple graphics, simple terrain, simple LGM, big shots, neutral pill colour |
+| C                    | carried pill counts after tank names (" +2"); off by default |
 | E                    | event messages on the wire (joins, deaths, alliances, votes); off by default, chat only |
 | P                    | pre-game messages on the wire (the lobby, at negative times); off by default |
 | D, I                 | debug coordinates, pillbox IDs                  |

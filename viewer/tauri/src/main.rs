@@ -417,6 +417,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 		&item(app, "toggle-lgm-sprites", "Toggle simple LGM", "Ctrl+M")?,
 		&item(app, "toggle-big-shots", "Toggle big shots", "Ctrl+B")?,
 		&item(app, "toggle-neutral-pill-colour", "Toggle neutral pill colour", "Ctrl+N")?,
+		&item(app, "toggle-carried-pills", "Toggle carried pill counts", "Ctrl+C")?,
 		&PredefinedMenuItem::separator(app)?,
 		&item(app, "toggle-event-messages", "Toggle event messages", "Ctrl+E")?,
 		&item(app, "toggle-pregame-messages", "Toggle pre-game messages", "Ctrl+P")?,

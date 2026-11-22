@@ -62,6 +62,8 @@ let use_lgm_sprites = true;
 let use_big_shots = false;
 let use_simple_terrain = false;
 let use_neutral_pill_colour = true;
+/* A tank carrying pillboxes has their number after its name, " +2". */
+let carried_pills_enabled = false;
 let coordinate_debug_enabled = false;
 let pillbox_ids_enabled = false;
 let base_stocks_enabled = false;
@@ -952,7 +954,19 @@ function draw_tanks() {
 
 function draw_tank_label(p, cx, cy, r) {
 	let name = pretty(cur.players[p].name || `p${p}`);
-	draw_object_label(name, cx, cy, r);
+	let carried = carried_pills_enabled ? carried_pills(p) : 0;
+	draw_object_label(carried > 0 ? `${name} +${carried}` : name, cx, cy, r);
+}
+
+/* How many pillboxes a player's tank is carrying. A pill belongs to a
+ * player, not a team, and picking one up makes it the picker's, so a
+ * carried pill's owner is the tank it is in. */
+function carried_pills(p) {
+	let n = 0;
+	for (let pill of cur.pills) {
+		if (pill.on_map && pill.in_tank && pill.owner === p) n++;
+	}
+	return n;
 }
 
 function draw_object_label(label, cx, cy, r) {
@@ -1360,6 +1374,7 @@ function toggle_lgm_sprites() { use_lgm_sprites = !use_lgm_sprites; request_draw
 function toggle_big_shots() { use_big_shots = !use_big_shots; request_draw(); }
 function toggle_simple_terrain() { use_simple_terrain = !use_simple_terrain; request_draw(); }
 function toggle_neutral_pill_colour() { use_neutral_pill_colour = !use_neutral_pill_colour; request_draw(); }
+function toggle_carried_pills() { carried_pills_enabled = !carried_pills_enabled; request_draw(); }
 function toggle_coordinate_debug() { coordinate_debug_enabled = !coordinate_debug_enabled; update_coordinate_debug(); }
 function toggle_pillbox_ids() { pillbox_ids_enabled = !pillbox_ids_enabled; request_draw(); }
 function toggle_base_stocks() { base_stocks_enabled = !base_stocks_enabled; request_draw(); }
@@ -1510,6 +1525,7 @@ const SHORTCUT_GROUPS = [
 		{ what: "Simple LGM", keys: ["M"] },
 		{ what: "Big shots", keys: ["B"] },
 		{ what: "Neutral pill colour", keys: ["N"] },
+		{ what: "Carried pill counts", keys: ["C"] },
 	] },
 	{ name: "Message wire", rows: [
 		{ what: "Event messages", keys: ["E"] },
@@ -1701,6 +1717,9 @@ window.addEventListener("keydown", e => {
 	} else if (toggle_key(e, "KeyN")) {
 		e.preventDefault();
 		toggle_neutral_pill_colour();
+	} else if (toggle_key(e, "KeyC")) {
+		e.preventDefault();
+		toggle_carried_pills();
 	} else if (toggle_key(e, "KeyT")) {
 		e.preventDefault();
 		toggle_simple_terrain();
@@ -1831,6 +1850,7 @@ if (window.api) {
 			case "toggle-big-shots": toggle_big_shots(); break;
 			case "toggle-simple-terrain": toggle_simple_terrain(); break;
 			case "toggle-neutral-pill-colour": toggle_neutral_pill_colour(); break;
+			case "toggle-carried-pills": toggle_carried_pills(); break;
 			case "toggle-event-messages": toggle_event_messages(); break;
 			case "toggle-pregame-messages": toggle_pregame_messages(); break;
 			case "toggle-coordinate-debug": toggle_coordinate_debug(); break;

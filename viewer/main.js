@@ -106,6 +106,7 @@ function build_menu() {
 				{ label: "Toggle simple LGM", accelerator: "CmdOrCtrl+M", click: () => send("toggle-lgm-sprites") },
 				{ label: "Toggle big shots", accelerator: "CmdOrCtrl+B", click: () => send("toggle-big-shots") },
 				{ label: "Toggle neutral pill colour", accelerator: "CmdOrCtrl+N", click: () => send("toggle-neutral-pill-colour") },
+				{ label: "Toggle carried pill counts", accelerator: "CmdOrCtrl+C", click: () => send("toggle-carried-pills") },
 				{ type: "separator" },
 				{ label: "Toggle event messages", accelerator: "CmdOrCtrl+E", click: () => send("toggle-event-messages") },
 				{ label: "Toggle pre-game messages", accelerator: "CmdOrCtrl+P", click: () => send("toggle-pregame-messages") },
