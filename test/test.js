@@ -199,6 +199,19 @@ async function test_synthetic() {
 	check("attribution damage", JSON.stringify(attribution.records[0]) === JSON.stringify({ tick: 300, type: 1, name: "damage", source: "shell", target: "pill", target_index: 0, attacker: 1, amount: 258, destroyed: true, x: 101, y: 102 }), JSON.stringify(attribution.records[0]));
 	check("attribution kill", attribution.records[1].name === "kill" && attribution.records[1].killer === 255 && attribution.records[1].killed === 0 && attribution.records[1].tick === 65536);
 	check("attribution action", attribution.records[2].name === "action" && attribution.records[2].action === "lay_mine" && attribution.records[2].x === 100);
+
+	/* version 3 of the track (WinBolo 2.2.1) opens with each seat's team, and
+	 * adds one at every change of team */
+	let v3 = Array.from(synthetic_attribution());
+	v3[4] = 3;
+	v3[1064] = 5;
+	v3.splice(1068, 0, 7, 0, 0, 0, 0, 0, 1);       /* team: Alice is on team 1 from the start */
+	v3.push(7, 0x90, 1, 0, 0, 1, 1);               /* team: Bob joins it at tick 400 */
+	let teams = WinBoloLog.parse_attribution(Uint8Array.from(v3));
+	check("attribution version 3: team records", teams.version === 3 && teams.complete && teams.records.length === 5 &&
+		JSON.stringify(teams.records[0]) === JSON.stringify({ tick: 0, type: 7, name: "team", player: 0, team: 1 }) &&
+		JSON.stringify(teams.records[4]) === JSON.stringify({ tick: 400, type: 7, name: "team", player: 1, team: 1 }) &&
+		teams.records[1].name === "damage" && teams.records[3].name === "action", teams.records.map(r => r.name).join(" "));
 	let h = log.header;
 	check("header map name", h.map_name === "Test Map");
 	check("header bolo version", h.bolo_version === "2.0.3");
@@ -607,9 +620,12 @@ function test_winbolo_21_limits() {
 	check("2.1 limits: an empty panel is the clear", parse([panel([])]).events[0].items.length === 0);
 
 	let rule = (index, value, n = 8) => { let b = Buffer.alloc(3 + n); b.writeUInt16BE(index); b[2] = n; if (n === 8) b.writeDoubleBE(value, 3); return [...b]; };
-	let rules = parse([event(61, rule(63, 64)), event(61, rule(155, 1)), event(61, rule(999, 2))]).events;
+	let rules = parse([event(61, rule(63, 64)), event(61, rule(155, 1)), event(61, rule(999, 2)), event(61, rule(75, 2.5)), event(61, rule(157, 1))]).events;
 	check("2.1 limits: rules are named by index", rules[0].rule_name === "shell_speed" && rules[0].value === 64 &&
 		rules[1].rule_name === "tank_hit_sets_off_mines" && rules[2].rule === 999 && rules[2].rule_name === undefined && rules[2].value === 2);
+	/* 2.2.2: the parachute's speed need not be a whole number, and the builder's blast shape is rule 157 */
+	check("2.2.2 rules: a fractional parachute speed, and the blast shape", rules[3].rule_name === "lgm_helicopter_speed" && rules[3].value === 2.5 &&
+		rules[4].rule_name === "lgm_blast_shape" && rules[4].value === 1);
 
 	let refused = {
 		"a size mark after a small text": panel([3, 0, 0, 2, 0, 0, ...pstr("hi"), ...mark]),

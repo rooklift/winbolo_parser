@@ -157,7 +157,7 @@ with a in the high nibble and b in the low.
 | 1    | PlayerJoined      | slot, 4 bytes, name. In version 0 the 4 bytes were the player's IPv4 address; from version 1 they are a two-letter country code, an account flags byte (bit 0 a WinBolo.net account, bit 1 a Steam account, bit 5 a bot) and a reserved zero |
 | 2    | PlayerQuit        | slot                                                          |
 | 3    | PlayerLocation    | slot, mx, my, nibble(px, py), nibble(direction 0-15, on boat). mx = my = 0 is a tank not in the world (dead, or in the lobby). Only logged when something changed |
-| 4    | LgmLocation       | nibble(slot, frame), mx, my, nibble(px, py). Logged every tick the man is out of the tank; frames 0-2 walk, 3 is the parachute |
+| 4    | LgmLocation       | nibble(slot, frame), mx, my, nibble(px, py). Logged every tick the man is out of the tank; frames 0-2 walk, 3 is the parachute, whose position is its tile's corner (below) |
 | 5    | MapChange         | x, y, terrain (file terrain codes, below)                     |
 | 6    | Shell             | mx, my, nibble(px, py), frame. Logged every tick for every shell and explosion: frame 9-24 is a shell flying in direction frame - 9; frame 8 down to 1 is an explosion animating; the stages step down every third tick on a clock shared by all explosions, so the first stage a burst is logged at may be 8 or 7. The client draws stage s with its EXPLOSION(9 - s) tile: stage 8 is a tiny spark, the fireball is largest at stage 5, and stages 4 to 1 are a thinning scatter of sparks. Tank-hit debris and landing tank wreckage are logged at stage 8 every tick as they fly, so they appear as moving sparks |
 | 7-17 | Sound*            | x, y of the sound: build, farm, shoot, hit tank, hit tree, hit wall, mine lay, mine explode, explosion, big explosion, man die. None occur in the sample; WinBolo 2.1 writes them |
@@ -259,9 +259,31 @@ position is the top-left corner of the 16-pixel explosion tile: a shell's
 burst is logged at the shell's position less half a tile (`TANK_SUBTRACT`
 in `shells.c`), and the client draws every explosion frame with its corner
 at the logged point, so the visible centre is half a tile down and right
-of it. Directions are 16-way, 0 north, clockwise. The public source
+of it. The parachute frame of an LgmLocation is the same: `lgmGetMX` and
+its siblings take half a square off the man's place on that frame, so the
+log holds the corner of the parachute's tile and the man is half a tile
+down and right of it. Directions are 16-way, 0 north, clockwise. The public source
 writes KillPlayer or PlayerDied for a death; version 2 writes both in the
 same tick.
+
+A builder killed out of his tank is logged as LostMan, and his
+replacement parachutes in: from that tick the man's frame is 3, his
+position jumps to the middle of a start square chosen at random, and he
+flies to where his tank was when he died (`lgmKill`), not to where it has
+gone since. He lands once he is within `lgm_arrive_tolerance` (16 world
+units) of that place on both axes, and walks the rest. Each log tick he
+covers `lgm_helicopter_speed` world units, 3 classically, which is a
+square in 85 ticks; the Mac Bolo Rules mod sets 2. Until WinBolo 2.2.2 the
+server re-aimed him every tick and rounded the step to whole units on each
+axis, which left him a handful of headings to fly on and a speed that
+depended on which he had: in the sample (2.0.3), 20 flights run from 2.84
+to 3.59 units a tick and bow up to 1.8 squares off the straight line.
+From 2.2.2 the server keeps the fraction of a unit, the rule may be any
+number from 0.01 to 255, and a step that would pass the landing place
+stops on it. Measured in two replays from 2.2.2, five flights under the
+classic rule fit 2.9998 to 3.0000 units a tick and four under the mod's
+2.0000 to 2.0001, on headings all round the compass, and no logged point
+is further off the straight line than the log's own 16-unit pixel allows.
 
 ### Version 2 events
 
@@ -432,10 +454,11 @@ of the server's packed structures.
 
 ```
 "WBAT"               4 bytes, no terminator
-version              1 byte; 2
+version              1 byte; 2, or 3 from WinBolo 2.2.1 (adds the team record)
 truncated            1 byte; 1 if the 64 MB per-round cap dropped records
 slot count           2 bytes; 16
-slot identities      16 × 66 bytes: bot (1 byte), team (1 byte), name (64 bytes, NUL-padded)
+slot identities      16 × 66 bytes: bot (1 byte), team (1 byte; in version 3 the slot's last team),
+                     name (64 bytes, NUL-padded)
 record count         4 bytes, at offset 1064
 records              type byte, 4-byte tick, then a fixed payload by type
 ```
@@ -457,6 +480,7 @@ know must stop.
 | 4    | lgm lost | victim, killer, x, y                                                     |
 | 5    | action   | player, action (0 farm, 1 build, 2 lay mine, 3 fire), x, y               |
 | 6    | pickup   | picker, pill index, x, y: a dead pillbox scooped up                      |
+| 7    | team     | version 3: player, team. The player's team from this tick on: one for each player in the game at the round's start, then one at every change (an alliance made or left, a join, a script) |
 
 A player field of 255 is no one: splash and chain damage has no attacker,
 an environmental death no killer. `amount` is the armour a hit removed;

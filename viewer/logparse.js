@@ -203,8 +203,8 @@ const PING_KINDS = { 0: "standard", 1: "caution", 2: "assist me", 3: "attack", 4
 const ENTITY_PILL = 0, ENTITY_BASE = 1, ENTITY_START = 2;
 /* The rules a RuleSet names, by index: SIM_RULE_LIST in WinBolo's
  * sim_rules_names.h, whose order is the index. New rules go on the end,
- * so the list only grows; the last, tank_hit_sets_off_mines, came after
- * 2.1 itself. */
+ * so the list only grows; tank_hit_sets_off_mines came after 2.1 itself,
+ * and the two after it with 2.2.2. */
 const RULE_NAMES = [
 	"tank_reload_ticks", "tank_full_shells", "tank_full_mines", "tank_full_trees", "tank_full_armour",
 	"tank_death_ticks", "tank_water_ticks", "shell_damage", "mine_damage", "mine_damage_range",
@@ -242,6 +242,7 @@ const RULE_NAMES = [
 	"tree_weight_road", "tree_weight_mine", "pill_shell_cap", "pill_max_shells_at_tank",
 	"pill_base_defend_shape", "tank_slide_mac", "tank_slide_armour_bonus", "pill_aim_mac",
 	"tank_collision_mac", "tank_deep_sea_safe", "tank_hit_sets_off_mines",
+	"man_dead_pill_terrain_speed", "lgm_blast_shape",
 ];
 /* Visibility policies of the GameSettings view byte, two bits each */
 const VIEW_POLICIES = { 0: "always", 1: "key", 2: "decay", 3: "off" };
@@ -973,10 +974,13 @@ function parse_log(bytes) {
  * of 66 bytes, the record count), then records of a type byte, a uint32
  * tick and a fixed payload. Everything is little-endian, and the ticks
  * are the server's 10 ms steps counted from the start of the round: twice
- * the log's rate, and not from the log's tick 0 when there was a lobby. */
+ * the log's rate, and not from the log's tick 0 when there was a lobby.
+ * Version 3 of the track (WinBolo's attribution_track.h, from 2.2.1) adds
+ * the team record: each seat's team at the round's start and at every
+ * change after. */
 const ATTRIBUTION_HEADER = 1068;
-const ATTRIBUTION_PAYLOAD = { 1: 9, 2: 7, 3: 7, 4: 4, 5: 4, 6: 4 };
-const ATTRIBUTION_TYPES = { 1: "damage", 2: "kill", 3: "capture", 4: "lgm_lost", 5: "action", 6: "pickup" };
+const ATTRIBUTION_PAYLOAD = { 1: 9, 2: 7, 3: 7, 4: 4, 5: 4, 6: 4, 7: 2 };
+const ATTRIBUTION_TYPES = { 1: "damage", 2: "kill", 3: "capture", 4: "lgm_lost", 5: "action", 6: "pickup", 7: "team" };
 const DAMAGE_SOURCES = { 0: "unknown", 1: "shell", 2: "mine" };
 const DAMAGE_TARGETS = { 0: "tank", 1: "pill", 2: "base" };
 const CAPTURE_TARGETS = { 0: "pill", 1: "base" };
@@ -1001,6 +1005,7 @@ const ATTRIBUTION_DECODERS = {
 	4: (b, r) => { r.victim = b[0]; r.killer = b[1]; r.x = b[2]; r.y = b[3]; },
 	5: (b, r) => { r.player = b[0]; r.action = ACTIONS[b[1]] || `action ${b[1]}`; r.x = b[2]; r.y = b[3]; },
 	6: (b, r) => { r.picker = b[0]; r.pill = b[1]; r.x = b[2]; r.y = b[3]; },
+	7: (b, r) => { r.player = b[0]; r.team = b[1]; },
 };
 
 function parse_attribution(bytes) {
