@@ -31,17 +31,37 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+# The upload and the deploy are separate jobs on purpose. deploy-pages looks
+# the artifact up by name in the run's artifact list, and GitHub's list can
+# lag an upload by several seconds: as consecutive steps of one job the
+# lookup came a third of a second after the upload and found
+# nothing ("No artifacts named "github-pages" were found", deploy-pages issue
+# 451). A second job starts seconds later. Should the list lag even that, the
+# deploy is tried once more after a wait; a lookup that found nothing has
+# deployed nothing, so the second try starts clean.
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: viewer
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url || steps.retry.outputs.page_url }}
+    steps:
       - id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      - name: Wait before the second try
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+      - id: retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4
